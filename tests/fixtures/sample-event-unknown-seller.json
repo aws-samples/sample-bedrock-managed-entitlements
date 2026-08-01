@@ -1,0 +1,33 @@
+{
+  "version": "0",
+  "id": "unknown-seller-event-id",
+  "detail-type": "Purchase Agreement Created - Acceptor",
+  "source": "aws.agreement-marketplace",
+  "account": "111122223333",
+  "time": "2025-02-01T09:00:00Z",
+  "region": "us-east-1",
+  "resources": [
+    "arn:aws:aws-marketplace::agreement:agmt-unknownseller999"
+  ],
+  "detail": {
+    "requestId": "deadbeef-0000-1111-2222-333344445555",
+    "catalog": "AWSMarketplace",
+    "agreement": {
+      "id": "agmt-unknownseller999",
+      "intent": "NEW",
+      "status": "ACTIVE",
+      "acceptanceTime": "2025-02-01T09:00:00Z",
+      "startTime": "2025-02-01T09:00:00Z",
+      "endTime": "2026-02-01T09:00:00Z"
+    },
+    "acceptor": {
+      "accountId": "111122223333"
+    },
+    "proposer": {
+      "accountId": "999988887777"
+    },
+    "offer": {
+      "id": "offer-unknown456"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "organizationId": "o-xxxxxxxxxx",
+  "enableAutoAccept": false,
+  "allowedSellers": [
+    {
+      "name": "Anthropic",
+      "proposerAccountId": "REPLACE_WITH_SELLER_ACCOUNT_ID",
+      "autoActivateGrant": true,
+      "autoAcceptOffers": false,
+      "replaceLegacyGrants": false
+    }
+  ],
+  "notifications": {
+    "emailAddresses": ["admin@example.com"],
+    "slackWorkspaceId": "",
+    "slackChannelId": ""
+  }
+}

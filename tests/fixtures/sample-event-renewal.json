@@ -1,0 +1,33 @@
+{
+  "version": "0",
+  "id": "99887766-5544-3322-1100-aabbccddeeff",
+  "detail-type": "Purchase Agreement Created - Acceptor",
+  "source": "aws.agreement-marketplace",
+  "account": "111122223333",
+  "time": "2025-03-01T14:00:00Z",
+  "region": "us-east-1",
+  "resources": [
+    "arn:aws:aws-marketplace::agreement:agmt-renewtest123456"
+  ],
+  "detail": {
+    "requestId": "8a4b5c6d-e7f8-9012-3456-789012345678",
+    "catalog": "AWSMarketplace",
+    "agreement": {
+      "id": "agmt-renewtest123456",
+      "intent": "RENEW",
+      "status": "ACTIVE",
+      "acceptanceTime": "2025-03-01T14:00:00Z",
+      "startTime": "2025-03-01T14:00:00Z",
+      "endTime": "2026-03-01T14:00:00Z"
+    },
+    "acceptor": {
+      "accountId": "111122223333"
+    },
+    "proposer": {
+      "accountId": "444455556666"
+    },
+    "offer": {
+      "id": "offer-renewal789012"
+    }
+  }
+}

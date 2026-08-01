@@ -1,0 +1,33 @@
+{
+  "version": "0",
+  "id": "abcd1234-5678-90ef-ghij-klmnopqrstuv",
+  "detail-type": "Purchase Agreement Created - Acceptor",
+  "source": "aws.agreement-marketplace",
+  "account": "111122223333",
+  "time": "2025-01-15T10:30:00Z",
+  "region": "us-east-1",
+  "resources": [
+    "arn:aws:aws-marketplace::agreement:agmt-9xyz8wmklp67rt32nb1qv45ds"
+  ],
+  "detail": {
+    "requestId": "7f3e2d1c-a9b8-4f5e-6d7c-1234567890ab",
+    "catalog": "AWSMarketplace",
+    "agreement": {
+      "id": "agmt-9xyz8wmklp67rt32nb1qv45ds",
+      "intent": "NEW",
+      "status": "ACTIVE",
+      "acceptanceTime": "2025-01-15T10:30:00Z",
+      "startTime": "2025-01-15T10:30:00Z",
+      "endTime": "2026-01-15T10:30:00Z"
+    },
+    "acceptor": {
+      "accountId": "111122223333"
+    },
+    "proposer": {
+      "accountId": "444455556666"
+    },
+    "offer": {
+      "id": "offer-abcdef123456"
+    }
+  }
+}

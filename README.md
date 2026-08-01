@@ -1,17 +1,368 @@
-## My Project
+# Amazon Bedrock Managed Entitlements - Automated Grant Distribution
 
-TODO: Fill this README out!
+A sample implementation that automates the distribution of [Amazon Bedrock Managed Entitlements](https://docs.aws.amazon.com/bedrock/latest/userguide/managed-entitlements.html) across your AWS Organization. Deploy this in your management account to automatically create and activate License Manager grants whenever a new Marketplace private offer is accepted - eliminating manual per-account grant management.
 
-Be sure to:
+> **This is a sample.** It is intended as a starting point for customers to review, adapt, and extend to meet their own security, compliance, and operational requirements. See [Security](#security) for shared responsibility guidance.
 
-* Change the title in this README
-* Edit your repository description on GitHub
+## Challenge
+
+When you negotiate private pricing for a model through an [AWS Marketplace private offer](https://docs.aws.amazon.com/marketplace/latest/buyerguide/buyer-private-offers.html), the subscription and its associated license are tied to a single account. Every other account in your organization needs its own subscription to access that model at the negotiated rate - creating procurement overhead and compliance gaps.
+
+```
+Management account ──── ✅ Subscribed (negotiated rate)
+Dev account ─────────── ❌ No access
+Staging ─────────────── ❌ No access  
+Production ──────────── ❌ No access
+```
+
+Even when you manually distribute grants via AWS License Manager, those grants land in a **Disabled** state by default. Until explicitly activated, accounts are billed at **public list pricing** - not the rate you negotiated. This is the silent billing blocker.
+
+## Solution
+
+[Amazon Bedrock Managed Entitlements](https://docs.aws.amazon.com/bedrock/latest/userguide/managed-entitlements.html) solves the distribution problem: subscribe once, create a single grant targeting your Organization ID, and every member account inherits access automatically.
+
+This sample automates the grant distribution step so you never have to manually create or activate grants again:
+
+1. **Listens** for new Marketplace agreement events via Amazon EventBridge
+2. **Verifies** the seller is in your allow-list
+3. **Discovers** the license created by the subscription
+4. **Creates and activates** an organization-wide grant (addressing the Disabled→Active gotcha)
+5. **Notifies** your team via Amazon SNS
+
+📎 **Reference**: [Bedrock Managed Entitlements slides](https://wirjo.github.io/slides/bedrock-managed-entitlements/)
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+This stack must be deployed in your **AWS Organizations management account** in **`us-east-1`**.
+
+Before deploying, verify:
+
+1. **AWS Organizations - "All Features" Enabled**
+   - Open [AWS Organizations console](https://console.aws.amazon.com/organizations/) → Settings
+   - Must say "All features" (not "Consolidated billing" only)
+
+2. **License Manager Service-Linked Role**
+   - Open [License Manager console](https://console.aws.amazon.com/license-manager/) in `us-east-1`
+   - Accept the SLR, enable "Link AWS Organization accounts"
+
+3. **AWS Marketplace Trusted Access**
+   - [Marketplace Settings](https://console.aws.amazon.com/marketplace/home#/settings) → "Enable trusted access across your organization"
+
+4. **Development Tools** - AWS CDK v2, Python 3.12+, AWS CLI with management account credentials
+
+### Deploy
+
+```bash
+# Clone
+git clone https://github.com/wirjo/sample-bedrock-managed-entitlements.git
+cd sample-bedrock-managed-entitlements
+
+# Configure (interactive - auto-discovers org ID and licenses)
+python3 scripts/setup_config.py
+
+# Or configure manually:
+# cp config/sellers.example.json config/sellers.json && edit config/sellers.json
+
+# Deploy
+cd cdk && pip install -r requirements.txt
+cdk bootstrap aws://ACCOUNT_ID/us-east-1  # first time only
+cdk deploy
+
+# Seed DynamoDB with your allowed sellers
+cd .. && python scripts/seed_sellers.py --config config/sellers.json
+```
+
+### Configuration
+
+**Interactive setup (recommended):**
+
+```bash
+python3 scripts/setup_config.py
+```
+
+Auto-discovers your Organization ID, lists existing licenses, and generates config interactively.
+
+**Manual config** (`config/sellers.json`):
+
+```json
+{
+  "organizationId": "o-xxxxxxxxxx",
+  "allowedSellers": [
+    {
+      "name": "Anthropic",
+      "proposerAccountId": "123456789012",
+      "autoActivateGrant": true
+    }
+  ],
+  "notifications": {
+    "emailAddresses": ["admin@example.com"],
+    "slackWorkspaceId": "",
+    "slackChannelId": ""
+  }
+}
+```
+
+### Notifications
+
+**Email** - add addresses to `notifications.emailAddresses`. Subscriptions are created automatically.
+
+**Slack** (via [AWS Chatbot](https://docs.aws.amazon.com/chatbot/latest/adminguide/what-is.html)) - add your Slack workspace and channel IDs:
+
+```json
+"notifications": {
+  "slackWorkspaceId": "T01ABCDEF",
+  "slackChannelId": "C01ABCDEF"
+}
+```
+
+To find these:
+1. [Set up AWS Chatbot with Slack](https://docs.aws.amazon.com/chatbot/latest/adminguide/slack-setup.html) (one-time: authorize the AWS Chatbot app in your Slack workspace)
+2. Workspace ID: visible in AWS Chatbot console after authorization
+3. Channel ID: right-click the Slack channel → "Copy link" → the `C01...` segment is the channel ID
+
+When configured, grant creation/activation events and errors are posted directly to your Slack channel.
+
+**Finding the seller account ID:**
+
+```bash
+# From existing licenses
+aws license-manager list-received-licenses --region us-east-1 \
+    --query 'Licenses[].{Product:ProductName,Issuer:Issuer.Name}' --output table
+
+# From existing agreements
+aws marketplace-agreement search-agreements --catalog AWSMarketplace \
+    --query 'AgreementViewSummaries[].{Id:AgreementId,Proposer:ProposerAccountId}' --output table
+
+# Your Organization ID
+aws organizations describe-organization --query 'Organization.Id' --output text
+```
+
+---
+
+## How It Works
+
+### Architecture
+
+```mermaid
+sequenceDiagram
+    participant MP as AWS Marketplace
+    participant EB as Amazon EventBridge
+    participant LF as Lambda (mppo-grants-handler)
+    participant DB as DynamoDB (allow-list)
+    participant LM as License Manager
+    participant SNS as Amazon SNS
+    participant ORG as AWS Organization (all accounts)
+
+    MP->>EB: Purchase Agreement Created - Acceptor
+    EB->>LF: Invoke Lambda
+    LF->>DB: Verify proposer account ID
+    DB-->>LF: Seller config (name, autoActivate)
+    LF->>LM: ListReceivedLicenses (find new license)
+    LM-->>LF: License ARN
+    LF->>LM: CreateGrant (target: Organization ID)
+    LM-->>LF: Grant ARN (status: DISABLED)
+    LF->>LM: CreateGrantVersion (Status: ACTIVE)
+    LM-->>LF: Grant activated
+    LM->>ORG: Distribute entitlement to all accounts
+    LF->>SNS: Publish success notification
+```
+
+### Grant Targeting
+
+By default, grants target the **entire organization**. For granular control, add `grantTargets`:
+
+| Target | Config | Use Case |
+|--------|--------|----------|
+| Organization (default) | Omit `grantTargets` | All current and future accounts |
+| OU | `{"type": "ou", "id": "o-abc/ou-abc1-123"}` | Segmented rollout (e.g., prod OU first) |
+| Account | `{"type": "account", "id": "111122223333"}` | Specific teams only |
+
+```json
+{
+  "name": "Anthropic",
+  "proposerAccountId": "123456789012",
+  "grantTargets": [
+    { "type": "ou", "id": "o-abc123/ou-abc1-12345678" },
+    { "type": "account", "id": "999988887777" }
+  ]
+}
+```
+
+> **Note:** Account-level grants require the recipient to accept before activation (unlike org/OU grants which auto-accept).
+
+### Grant Activation
+
+Grants auto-accept but land in **Disabled** state. Until explicitly activated, accounts pay public list pricing.
+
+This automation activates grants automatically via `CreateGrantVersion(Status=ACTIVE)`.
+
+### Legacy Offer Cleanup
+
+Set `"replaceLegacyGrants": true` to automatically disable old per-account grants when activating the new org-wide grant. Uses `ActivationOverrideBehavior: ALL_GRANTS_PERMITTED_BY_ISSUER`.
+
+Default (`false`): new grant activates without affecting existing grants.
+
+### Auto-Accept Offers (Optional)
+
+⚠️ **RISK: Auto-accept creates financial commitments automatically.** Only enable for sellers with pre-negotiated terms you are comfortable accepting without manual review.
+
+When enabled, a scheduled Lambda polls for pending offers from trusted sellers and accepts them. The existing grant automation then distributes the license.
+
+**Two-level opt-in required:**
+1. Global: `"enableAutoAccept": true` in config (deploys the Lambda)
+2. Per-seller: `"autoAcceptOffers": true` (opts in that seller)
+
+```json
+{
+  "enableAutoAccept": true,
+  "autoAcceptSchedule": "rate(1 hour)",
+  "allowedSellers": [{
+    "name": "Anthropic",
+    "proposerAccountId": "123456789012",
+    "autoAcceptOffers": true
+  }]
+}
+```
+
+**When to use:** Ongoing relationship with seller, consistent terms across models, budget pre-approved.
+**When NOT to use:** Variable pricing, compliance requires manual approval, offer terms may change.
+
+---
+
+## Verifying & Testing
+
+### Verifying Discounts
+
+After grants are activated, verify the negotiated rate is flowing:
+
+```bash
+# From member account (CloudShell - zero setup)
+python3 scripts/bedrock_discount_check.py --issuer "Anthropic, PBC"
+
+# From management account (scope billing to a member)
+python3 scripts/bedrock_discount_check.py --issuer "Anthropic, PBC" --linked-account 222233334444
+```
+
+See [`scripts/README.md`](scripts/README.md) for full usage.
+
+### Testing Without Live Offers
+
+```bash
+# Unit tests (17 passing - mocked AWS services)
+pip install -r requirements-dev.txt && pytest tests/ -v
+
+# Simulate EventBridge event locally
+python scripts/simulate_event.py --seller-account 123456789012
+
+# Inject test event into live EventBridge
+python scripts/simulate_event.py --seller-account 123456789012 --live
+```
+
+### E2E Validation
+
+```bash
+# Validate all deployed infrastructure
+python scripts/e2e_validate.py --org-id o-xxxxxxxxxx --seller-account 444455556666 --simulate
+```
+
+---
 
 ## Security
 
-See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+### Shared Responsibility Model
 
-## License
+This sample deploys infrastructure into **your** AWS account. Under the [AWS Shared Responsibility Model](https://aws.amazon.com/compliance/shared-responsibility-model/):
 
-This library is licensed under the MIT-0 License. See the LICENSE file.
+| Responsibility | Owner |
+|---------------|-------|
+| Infrastructure security (compute, network, storage) | AWS |
+| IAM policies and access control | You |
+| Configuration of the allow-list (which sellers to trust) | You |
+| Enabling/disabling auto-accept and understanding its risks | You |
+| Monitoring grant status and billing rates | You |
+| Secrets management and credential rotation | You |
+| Compliance with your organization's procurement policies | You |
 
+**This is a sample** - review and adapt it to your organization's security requirements before production use.
+
+### IAM Permissions (Least Privilege)
+
+```yaml
+# Grant distribution Lambda
+- license-manager:ListReceivedLicenses
+- license-manager:CreateGrant
+- license-manager:CreateGrantVersion
+- license-manager:GetGrant
+- license-manager:ListDistributedGrants
+- aws-marketplace:DescribeAgreement
+- aws-marketplace:SearchAgreements
+- dynamodb:GetItem (config table only)
+- sns:Publish (notification topic only)
+- sts:GetCallerIdentity
+- organizations:DescribeOrganization
+
+# Auto-accept Lambda (only deployed if enabled)
+- aws-marketplace:SearchAgreements
+- aws-marketplace:CreateAgreementRequest
+- aws-marketplace:AcceptAgreementRequest
+```
+
+### Key Security Considerations
+
+- The **DynamoDB allow-list** is the gatekeeper - only sellers in this table trigger automation
+- **Auto-accept** is disabled by default and requires two explicit opt-ins
+- All actions are logged to **CloudTrail** for audit
+- **SNS notifications** provide visibility into every automated action
+- The Lambda has **no write access** to License Manager beyond grant creation/activation
+
+---
+
+## Reference
+
+### Validation Status
+
+| Layer | Status | Method |
+|-------|--------|--------|
+| EventBridge event schema | ✅ Validated | Matched against [official AWS docs](https://docs.aws.amazon.com/marketplace/latest/buyerguide/agreement-eventbridge.html) |
+| License Manager API calls | ✅ Validated | `CreateGrant`, `CreateGrantVersion` verified against [API Reference](https://docs.aws.amazon.com/license-manager/latest/APIReference/) |
+| Lambda handler logic | ✅ Validated | 17 unit/integration tests (moto) |
+| CDK infrastructure | ✅ Validated | CDK assertion tests |
+| Live E2E (real private offer) | 🔲 Not yet tested | Requires management account + actual offer |
+
+### Cost Estimate
+
+This stack costs effectively **$0/month at rest**. You only pay when a private offer event fires.
+
+| Resource | Cost | Notes |
+|----------|------|-------|
+| Lambda (grant handler) | ~$0 | Free tier: 1M requests/month. Invoked only on new agreements (rare). |
+| Lambda (auto-accept, if enabled) | ~$0 | One invocation per schedule interval (e.g., hourly = 720/month). |
+| DynamoDB (seller allow-list) | ~$0 | On-demand pricing. Single-digit items, minimal reads. |
+| EventBridge | $0 | No charge for AWS service events or rules. |
+| SNS | ~$0 | Free tier: 1,000 email notifications/month. |
+| AWS Chatbot (Slack) | $0 | No additional charge. |
+| CloudWatch Logs | ~$0.50 | 2-week retention. Minimal log volume. |
+
+**Estimated total: < $1/month** under normal usage (a few private offers per month).
+
+No NAT Gateways, no VPCs, no always-on compute. The stack is entirely serverless and event-driven.
+
+### FAQ
+
+**Is a subscription per model?** Yes. Each model needs its own subscription. This automation handles the grant step, but per-model subscription is inherent.
+
+**Which account do I deploy from?** The management account. Only it can create org-wide grants.
+
+**What if my org uses "consolidated billing" only?** You're limited to account-level grants. Enable "all features" in Organizations.
+
+**What about old per-account grants?** Set `replaceLegacyGrants: true` to auto-replace them.
+
+**How do I verify the discount is working?** Run `scripts/bedrock_discount_check.py`.
+
+### License
+
+MIT-0 - See [LICENSE](LICENSE)
