@@ -18,6 +18,7 @@ this function creates multiple grants (one per target).
 """
 
 import logging
+import re
 import time
 import uuid
 
@@ -31,12 +32,17 @@ TARGET_ORGANIZATION = "organization"
 TARGET_OU = "ou"
 TARGET_ACCOUNT = "account"
 
+_ACCOUNT_ID_RE = re.compile(r"^\d{12}$")
+_ORG_ID_RE = re.compile(r"^o-[a-z0-9]{10,32}$")
+_OU_ID_RE = re.compile(r"^(o-[a-z0-9]{10,32}/)?ou-[a-z0-9]{4,32}-[a-z0-9]{8,32}$")
+
 
 def create_and_activate_grants(
     license_arn: str,
     grant_targets: list[dict],
     seller_name: str,
     product_name: str,
+    organization_id: str,
     home_region: str = "us-east-1",
     auto_activate: bool = True,
     replace_legacy_grants: bool = False,
@@ -53,6 +59,9 @@ def create_and_activate_grants(
             - id: org ID, OU ID, or account ID
         seller_name: Human-readable seller name (for grant naming)
         product_name: Product name (for grant naming)
+        organization_id: This deployment's AWS Organization ID. Every target
+            is validated to belong to this org (or equal it, for org-level
+            targets) before a grant is created — see _validate_target.
         home_region: License home region (always us-east-1 for Marketplace)
         auto_activate: Whether to immediately activate grants
         replace_legacy_grants: If True, uses ALL_GRANTS_PERMITTED_BY_ISSUER
@@ -62,6 +71,7 @@ def create_and_activate_grants(
     """
     results = []
     for target in grant_targets:
+        _validate_target(target, organization_id)
         result = _create_single_grant(
             license_arn=license_arn,
             target=target,
@@ -73,6 +83,65 @@ def create_and_activate_grants(
         )
         results.append(result)
     return results
+
+
+def _validate_target(target: dict, organization_id: str) -> None:
+    """Validate a grant target's shape and organization membership.
+
+    Raises ValueError on any malformed ID or an org/OU target that does not
+    belong to this deployment's organization. This is the only guard
+    available: License Manager's CreateGrant API exposes no grantee
+    condition key, so a bad principal ARN would otherwise reach the API
+    unrejected.
+    """
+    target_type = target.get("type")
+    target_id = str(target.get("id", ""))
+
+    if target_type == TARGET_ACCOUNT:
+        if not _ACCOUNT_ID_RE.match(target_id):
+            raise ValueError(
+                f"Invalid account ID grant target: {target_id!r} "
+                f"(expected 12 digits)"
+            )
+        _verify_account_in_organization(target_id, organization_id)
+    elif target_type == TARGET_OU:
+        ou_only = target_id.rsplit("/", 1)[-1]
+        if not _OU_ID_RE.match(target_id) and not re.match(r"^ou-[a-z0-9]{4,32}-[a-z0-9]{8,32}$", ou_only):
+            raise ValueError(
+                f"Invalid OU grant target: {target_id!r}"
+            )
+        target_org = target_id.split("/")[0] if "/" in target_id else organization_id
+        if target_org != organization_id:
+            raise ValueError(
+                f"OU grant target {target_id!r} belongs to organization "
+                f"{target_org!r}, expected {organization_id!r}"
+            )
+    elif target_type == TARGET_ORGANIZATION:
+        if target_id != organization_id:
+            raise ValueError(
+                f"Organization grant target {target_id!r} does not match "
+                f"this deployment's organization {organization_id!r}"
+            )
+    else:
+        raise ValueError(f"Unknown grant target type: {target_type!r}")
+
+
+def _verify_account_in_organization(account_id: str, organization_id: str) -> None:
+    """Verify an account ID is actually a member of this organization.
+
+    Uses ListAccounts (paginated) rather than DescribeOrganization, which
+    only describes the org itself and cannot confirm membership.
+    """
+    orgs = boto3.client("organizations")
+    paginator = orgs.get_paginator("list_accounts")
+    for page in paginator.paginate():
+        for acct in page.get("Accounts", []):
+            if acct.get("Id") == account_id:
+                return
+    raise ValueError(
+        f"Account {account_id!r} is not a member of organization "
+        f"{organization_id!r} — refusing to create a grant for it"
+    )
 
 
 def create_and_activate_grant(
@@ -109,6 +178,7 @@ def create_and_activate_grant(
             grant_targets=grant_targets,
             seller_name=seller_name,
             product_name=product_name,
+            organization_id=organization_id,
             home_region=home_region,
             auto_activate=auto_activate,
             replace_legacy_grants=replace_legacy_grants,

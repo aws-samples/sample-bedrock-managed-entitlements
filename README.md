@@ -217,7 +217,9 @@ Default (`false`): new grant activates without affecting existing grants.
 
 ⚠️ **RISK: Auto-accept creates financial commitments automatically.** Only enable for sellers with pre-negotiated terms you are comfortable accepting without manual review.
 
-When enabled, a scheduled Lambda polls for pending offers from trusted sellers and accepts them. The existing grant automation then distributes the license.
+When enabled, a scheduled Lambda lists private offers visible to this account via the [Marketplace Discovery API](https://docs.aws.amazon.com/marketplace/latest/developerguide/use-apis-as-buyer.html) (`ListPurchaseOptions` + `GetOffer` + `GetOfferTerms`), matches them against trusted sellers in the allow-list, and accepts matching offers via the Marketplace Agreement API (`CreateAgreementRequest` + `AcceptAgreementRequest`). The existing grant automation then distributes the license.
+
+> Unaccepted private offers aren't modeled as agreements in the Marketplace Agreement API — an agreement only exists after acceptance. Discovery therefore goes through `marketplace-discovery`, not `SearchAgreements`.
 
 **Two-level opt-in required:**
 1. Global: `"enableAutoAccept": true` in config (deploys the Lambda)
@@ -259,7 +261,7 @@ See [`scripts/README.md`](scripts/README.md) for full usage.
 ### Testing Without Live Offers
 
 ```bash
-# Unit tests (17 passing - mocked AWS services)
+# Unit tests (32 passing - mocked AWS services)
 pip install -r requirements-dev.txt && pytest tests/ -v
 
 # Simulate EventBridge event locally
@@ -313,7 +315,9 @@ This sample deploys infrastructure into **your** AWS account. Under the [AWS Sha
 - organizations:DescribeOrganization
 
 # Auto-accept Lambda (only deployed if enabled)
-- aws-marketplace:SearchAgreements
+- aws-marketplace:ListPurchaseOptions
+- aws-marketplace:GetOffer
+- aws-marketplace:GetOfferTerms
 - aws-marketplace:CreateAgreementRequest
 - aws-marketplace:AcceptAgreementRequest
 ```
@@ -335,10 +339,11 @@ This sample deploys infrastructure into **your** AWS account. Under the [AWS Sha
 | Layer | Status | Method |
 |-------|--------|--------|
 | EventBridge event schema | ✅ Validated | Matched against [official AWS docs](https://docs.aws.amazon.com/marketplace/latest/buyerguide/agreement-eventbridge.html) |
-| License Manager API calls | ✅ Validated | `CreateGrant`, `CreateGrantVersion` verified against [API Reference](https://docs.aws.amazon.com/license-manager/latest/APIReference/) |
-| Lambda handler logic | ✅ Validated | 17 unit/integration tests (moto) |
-| CDK infrastructure | ✅ Validated | CDK assertion tests |
-| Live E2E (real private offer) | 🔲 Not yet tested | Requires management account + actual offer |
+| License Manager API calls | ✅ Validated | `CreateGrant`, `CreateGrantVersion` verified against [API Reference](https://docs.aws.amazon.com/license-manager/latest/APIReference/); grant activation live-tested against an ISV Partner private offer |
+| Marketplace Discovery API calls | ✅ Validated | `ListPurchaseOptions`, `GetOffer`, `GetOfferTerms` live-tested against the real API (params, IAM permissions) |
+| Marketplace Agreement accept calls | ⚠️ Shape-validated | `CreateAgreementRequest`, `AcceptAgreementRequest` verified against API Reference and IAM policy simulation; not yet exercised against a live unaccepted offer |
+| Lambda handler logic | ✅ Validated | 32 unit/integration tests (moto + fakes) |
+| CDK infrastructure | ✅ Validated | CDK assertion tests, incl. auto-accept Lambda when `enableAutoAccept: true` |
 
 ### Cost Estimate
 

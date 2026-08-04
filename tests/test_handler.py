@@ -40,6 +40,7 @@ def test_handler_known_seller_full_flow():
         Item={
             "proposerAccountId": "444455556666",
             "name": "Anthropic",
+            "issuerName": "Anthropic",
             "autoActivateGrant": True,
         }
     )

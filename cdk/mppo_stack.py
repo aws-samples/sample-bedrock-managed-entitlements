@@ -232,8 +232,14 @@ class MppoGrantsAutomationStack(Stack):
         )
 
         # ─── Auto-Accept Lambda (OPTIONAL — disabled by default) ───────────
-        # This Lambda checks for pending offers from trusted sellers and
+        # This Lambda checks for private offers from trusted sellers and
         # auto-accepts them. Only deployed if enableAutoAccept is true.
+        #
+        # Rewritten against the live Marketplace Discovery + Agreement APIs
+        # (offers are discovered via marketplace-discovery.ListPurchaseOptions
+        # + GetOffer/GetOfferTerms, then accepted via marketplace-agreement.
+        # CreateAgreementRequest + AcceptAgreementRequest) — see
+        # lambda/auto_accept_handler.py and tests/test_auto_accept_handler.py.
         enable_auto_accept = config.get("enableAutoAccept", False)
 
         if enable_auto_accept:
@@ -262,14 +268,12 @@ class MppoGrantsAutomationStack(Stack):
 
             auto_accept_handler.add_to_role_policy(
                 iam.PolicyStatement(
-                    sid="MarketplaceAgreementAccept",
+                    sid="MarketplaceDiscoveryRead",
                     effect=iam.Effect.ALLOW,
                     actions=[
-                        "aws-marketplace:SearchAgreements",
-                        "aws-marketplace:DescribeAgreement",
-                        "aws-marketplace:GetAgreementTerms",
-                        "aws-marketplace:CreateAgreementRequest",
-                        "aws-marketplace:AcceptAgreementRequest",
+                        "aws-marketplace:ListPurchaseOptions",
+                        "aws-marketplace:GetOffer",
+                        "aws-marketplace:GetOfferTerms",
                     ],
                     resources=["*"],
                 )
@@ -277,9 +281,12 @@ class MppoGrantsAutomationStack(Stack):
 
             auto_accept_handler.add_to_role_policy(
                 iam.PolicyStatement(
-                    sid="STSGetCaller",
+                    sid="MarketplaceAgreementAccept",
                     effect=iam.Effect.ALLOW,
-                    actions=["sts:GetCallerIdentity"],
+                    actions=[
+                        "aws-marketplace:CreateAgreementRequest",
+                        "aws-marketplace:AcceptAgreementRequest",
+                    ],
                     resources=["*"],
                 )
             )
