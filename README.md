@@ -27,7 +27,8 @@ This sample automates the grant distribution step so you never have to manually 
 2. **Verifies** the seller is in your allow-list
 3. **Discovers** the license created by the subscription
 4. **Creates and activates** an organization-wide grant (addressing the Disabled→Active gotcha)
-5. **Notifies** your team via Amazon SNS
+5. **Retries activation asynchronously** if License Manager is still processing the grant
+6. **Notifies** your team via Amazon SNS
 
 📎 **Reference**: [Bedrock Managed Entitlements slides](https://wirjo.github.io/slides/bedrock-managed-entitlements/)
 
@@ -153,6 +154,7 @@ sequenceDiagram
     participant EB as Amazon EventBridge
     participant LF as Lambda (mppo-grants-handler)
     participant DB as DynamoDB (allow-list)
+    participant PDB as DynamoDB (pending grants)
     participant LM as License Manager
     participant SNS as Amazon SNS
     participant ORG as AWS Organization (all accounts)
@@ -166,7 +168,10 @@ sequenceDiagram
     LF->>LM: CreateGrant (target: Organization ID)
     LM-->>LF: Grant ARN (status: DISABLED)
     LF->>LM: CreateGrantVersion (Status: ACTIVE)
-    LM-->>LF: Grant activated
+    LM-->>LF: Grant activated or pending workflow
+    LF->>PDB: Record pending grant (if needed)
+    LF->>LF: Scheduled retry checks pending grants
+    LF->>LM: CreateGrantVersion once grant reaches DISABLED
     LM->>ORG: Distribute entitlement to all accounts
     LF->>SNS: Publish success notification
 ```
@@ -199,6 +204,8 @@ By default, grants target the **entire organization**. For granular control, add
 Grants auto-accept but land in **Disabled** state. Until explicitly activated, accounts pay public list pricing.
 
 This automation activates grants automatically via `CreateGrantVersion(Status=ACTIVE)`.
+
+License Manager can take hours or days to move a newly created grant through workflow states before it becomes activatable. If the first Lambda invocation sees the grant still processing, it records the grant in `mppo-pending-grants`. A scheduled retry rule (`mppo-grant-activation-retry`, every 6 hours) keeps checking the grant and activates it once License Manager reports `DISABLED`.
 
 ### Legacy Offer Cleanup
 

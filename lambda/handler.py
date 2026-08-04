@@ -22,15 +22,26 @@ from steps.verify_seller import verify_seller
 from steps.discover_license import discover_license
 from steps.create_grant import create_and_activate_grant
 from steps.notify import notify_admins
+from steps.pending_grants import (
+    SUCCESS_STATUSES,
+    record_pending_grant,
+    retry_pending_grant_activations,
+)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Environment variables
 SELLER_TABLE_NAME = os.environ.get("SELLER_TABLE_NAME", "mppo-allowed-sellers")
+PENDING_GRANT_TABLE_NAME = os.environ.get(
+    "PENDING_GRANT_TABLE_NAME", "mppo-pending-grants"
+)
 SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN", "")
 ORGANIZATION_ID = os.environ.get("ORGANIZATION_ID", "")
 HOME_REGION = os.environ.get("HOME_REGION", "us-east-1")
+
+RETRY_EVENT_SOURCE = "mppo-grants-automation"
+RETRY_EVENT_DETAIL_TYPE = "Retry Pending MPPO Grant Activations"
 
 
 def lambda_handler(event: dict, context) -> dict:
@@ -60,6 +71,17 @@ def lambda_handler(event: dict, context) -> dict:
     logger.info("Received event: %s", json.dumps(event))
 
     try:
+        if (
+            event.get("source") == RETRY_EVENT_SOURCE
+            and event.get("detail-type") == RETRY_EVENT_DETAIL_TYPE
+        ):
+            logger.info("Processing scheduled pending grant activation retry")
+            return retry_pending_grant_activations(
+                table_name=PENDING_GRANT_TABLE_NAME,
+                home_region=HOME_REGION,
+                topic_arn=SNS_TOPIC_ARN,
+            )
+
         # Parse the event
         detail = event.get("detail", {})
         agreement = detail.get("agreement", {})
@@ -177,27 +199,52 @@ def lambda_handler(event: dict, context) -> dict:
         )
         logger.info("Grant result: %s", json.dumps(grant_result))
 
-        # Step 4: Notify admins of success
+        # Step 4: Track pending activations and notify admins
         grant_count = grant_result.get("grant_count", 1)
         target_desc = (
             f"{grant_count} target(s)" if grant_targets
             else f"Organization {ORGANIZATION_ID}"
         )
-        logger.info("Step 4: Sending success notification")
+        grant_results = grant_result.get("grants") or [grant_result]
+        pending_grants = [
+            grant for grant in grant_results
+            if auto_activate and grant.get("status") not in SUCCESS_STATUSES
+        ]
+        for grant in pending_grants:
+            record_pending_grant(
+                table_name=PENDING_GRANT_TABLE_NAME,
+                grant=grant,
+                agreement_id=agreement_id,
+                offer_id=offer_id,
+                seller_name=seller_name,
+                product_name=product_name,
+                license_arn=license_arn,
+                replace_legacy_grants=replace_legacy,
+            )
+
+        logger.info("Step 4: Sending notification")
+        final_status = grant_result.get("status", "unknown")
+        subject_status = "Pending Activation" if pending_grants else "Created"
+        access_message = (
+            f"Grant activation is pending. The scheduled retry job will "
+            f"continue until License Manager reaches an activatable state."
+            if pending_grants else
+            f"Access distributed at the negotiated rate."
+        )
         notify_admins(
             topic_arn=SNS_TOPIC_ARN,
-            subject=f"MPPO Grant Created: {seller_name} - {product_name}",
+            subject=f"MPPO Grant {subject_status}: {seller_name} - {product_name}",
             message=(
-                f"Successfully distributed license from {seller_name}.\n\n"
+                f"Processed license distribution from {seller_name}.\n\n"
                 f"Agreement ID: {agreement_id}\n"
                 f"Offer ID: {offer_id}\n"
                 f"Intent: {intent}\n"
                 f"Product: {product_name}\n"
                 f"License ARN: {license_arn}\n"
                 f"Grant ARN: {grant_result.get('grant_arn', 'N/A')}\n"
-                f"Grant Status: {grant_result.get('status', 'unknown')}\n"
+                f"Grant Status: {final_status}\n"
                 f"Target: {target_desc}\n\n"
-                f"Access distributed at the negotiated rate."
+                f"{access_message}"
             ),
         )
 

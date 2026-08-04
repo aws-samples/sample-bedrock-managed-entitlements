@@ -65,6 +65,19 @@ class MppoGrantsAutomationStack(Stack):
             point_in_time_recovery=True,
         )
 
+        # ─── DynamoDB: Pending Grant Activation Retry Table ─────────────────
+        pending_grant_table = dynamodb.Table(
+            self,
+            "PendingGrantActivations",
+            table_name="mppo-pending-grants",
+            partition_key=dynamodb.Attribute(
+                name="grantArn", type=dynamodb.AttributeType.STRING
+            ),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=RemovalPolicy.DESTROY,
+            point_in_time_recovery=True,
+        )
+
         # ─── SNS: Notification Topic ────────────────────────────────────────
         notification_topic = sns.Topic(
             self,
@@ -116,6 +129,7 @@ class MppoGrantsAutomationStack(Stack):
             memory_size=256,
             environment={
                 "SELLER_TABLE_NAME": seller_table.table_name,
+                "PENDING_GRANT_TABLE_NAME": pending_grant_table.table_name,
                 "SNS_TOPIC_ARN": notification_topic.topic_arn,
                 "ORGANIZATION_ID": organization_id,
                 "HOME_REGION": "us-east-1",
@@ -125,6 +139,7 @@ class MppoGrantsAutomationStack(Stack):
 
         # Grant DynamoDB read access
         seller_table.grant_read_data(handler)
+        pending_grant_table.grant_read_write_data(handler)
 
         # Grant SNS publish
         notification_topic.grant_publish(handler)
@@ -196,6 +211,25 @@ class MppoGrantsAutomationStack(Stack):
             ),
         )
         rule.add_target(targets.LambdaFunction(handler))
+
+        # ─── EventBridge: Pending Grant Activation Retry ────────────────────
+        activation_retry_rule = events.Rule(
+            self,
+            "MppoGrantActivationRetryRule",
+            rule_name="mppo-grant-activation-retry",
+            description="Retries License Manager grant activation for pending MPPO grants",
+            schedule=events.Schedule.rate(Duration.hours(6)),
+        )
+        activation_retry_rule.add_target(
+            targets.LambdaFunction(
+                handler,
+                event=events.RuleTargetInput.from_object({
+                    "source": "mppo-grants-automation",
+                    "detail-type": "Retry Pending MPPO Grant Activations",
+                    "detail": {},
+                }),
+            )
+        )
 
         # ─── Auto-Accept Lambda (OPTIONAL — disabled by default) ───────────
         # This Lambda checks for pending offers from trusted sellers and
@@ -279,6 +313,11 @@ class MppoGrantsAutomationStack(Stack):
             description="DynamoDB table for seller allow-list",
         )
         cdk.CfnOutput(
+            self, "PendingGrantTableName",
+            value=pending_grant_table.table_name,
+            description="DynamoDB table for pending grant activation retries",
+        )
+        cdk.CfnOutput(
             self, "NotificationTopicArn",
             value=notification_topic.topic_arn,
             description="SNS topic for notifications",
@@ -287,4 +326,9 @@ class MppoGrantsAutomationStack(Stack):
             self, "EventBridgeRuleName",
             value=rule.rule_name,
             description="EventBridge rule name",
+        )
+        cdk.CfnOutput(
+            self, "ActivationRetryRuleName",
+            value=activation_retry_rule.rule_name,
+            description="EventBridge rule name for pending grant activation retries",
         )
