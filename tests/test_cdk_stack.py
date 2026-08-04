@@ -60,6 +60,21 @@ def test_dynamodb_table_schema():
     )
 
 
+def test_pending_grant_table_schema():
+    """Pending grant table tracks activation retries by grant ARN."""
+    template = get_template()
+
+    template.has_resource_properties(
+        "AWS::DynamoDB::Table",
+        {
+            "KeySchema": [
+                {"AttributeName": "grantArn", "KeyType": "HASH"},
+            ],
+            "BillingMode": "PAY_PER_REQUEST",
+        },
+    )
+
+
 def test_lambda_runtime():
     """Lambda uses Python 3.12 runtime."""
     template = get_template()
@@ -83,6 +98,9 @@ def test_lambda_environment_variables():
         {
             "Environment": {
                 "Variables": {
+                    "PENDING_GRANT_TABLE_NAME": {
+                        "Ref": Match.any_value()
+                    },
                     "HOME_REGION": "us-east-1",
                 }
             }
@@ -124,5 +142,19 @@ def test_lambda_has_license_manager_permissions():
                     })
                 ])
             }
+        },
+    )
+
+
+def test_activation_retry_rule_schedule():
+    """Scheduled rule retries pending grant activations."""
+    template = get_template()
+
+    template.has_resource_properties(
+        "AWS::Events::Rule",
+        {
+            "Name": "mppo-grant-activation-retry",
+            "ScheduleExpression": "rate(6 hours)",
+            "State": "ENABLED",
         },
     )

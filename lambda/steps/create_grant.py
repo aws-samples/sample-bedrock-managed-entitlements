@@ -298,14 +298,15 @@ def _activate_grant(
     client,
     grant_arn: str,
     source_version: str | None = None,
-    max_retries: int = 5,
+    max_retries: int = 6,
+    poll_interval_seconds: float = 5.0,
     replace_legacy: bool = False,
 ) -> str:
     """Activate a grant by calling CreateGrantVersion with Status=ACTIVE.
 
     Grant lifecycle:
-    - After CreateGrant: PENDING_WORKFLOW → DISABLED (for org grants, auto-accepted)
-    - After CreateGrantVersion(ACTIVE): DISABLED → ACTIVE
+    - After CreateGrant: PENDING_WORKFLOW -> DISABLED (for org grants, auto-accepted)
+    - After CreateGrantVersion(ACTIVE): PENDING_WORKFLOW -> WORKFLOW_COMPLETED/ACTIVE
 
     For org/OU grants, grants auto-accept and land in DISABLED.
     For account grants, the recipient must accept first (PENDING_ACCEPT → DISABLED → ACTIVE).
@@ -321,11 +322,15 @@ def _activate_grant(
         grant_arn: ARN of the grant to activate
         source_version: Current version of the grant (optional)
         max_retries: Maximum retry attempts
+        poll_interval_seconds: Seconds to wait between status checks
         replace_legacy: If True, use ALL_GRANTS_PERMITTED_BY_ISSUER
 
     Returns:
         Final grant status string
     """
+    activation_requested = False
+    last_status = "UNKNOWN"
+
     for attempt in range(max_retries):
         try:
             # Check current status
@@ -333,9 +338,10 @@ def _activate_grant(
             grant = grant_response["Grant"]
             current_status = grant.get("GrantStatus", "UNKNOWN")
             current_version = grant.get("Version", "1")
+            last_status = current_status
             logger.info(
-                "Grant %s current status: %s (version: %s)",
-                grant_arn, current_status, current_version,
+                "Grant %s current status: %s (version: %s, attempt: %d/%d)",
+                grant_arn, current_status, current_version, attempt + 1, max_retries,
             )
 
             if current_status == "ACTIVE":
@@ -349,11 +355,16 @@ def _activate_grant(
             if current_status in ("PENDING_WORKFLOW", "PENDING_ACCEPT"):
                 # Grant is still being processed, wait
                 logger.info("Grant still processing (status: %s), waiting...", current_status)
-                time.sleep(5)
+                time.sleep(poll_interval_seconds)
                 continue
 
             # Status is DISABLED — activate it
             if current_status == "DISABLED":
+                if activation_requested:
+                    logger.info("Grant activation already requested, waiting for workflow")
+                    time.sleep(poll_interval_seconds)
+                    continue
+
                 override_behavior = (
                     "ALL_GRANTS_PERMITTED_BY_ISSUER"
                     if replace_legacy
@@ -372,21 +383,25 @@ def _activate_grant(
                         "ActivationOverrideBehavior": override_behavior
                     },
                 )
+                activation_requested = True
                 new_status = activate_response.get("Status", "UNKNOWN")
                 logger.info(
                     "Activation response: status=%s, version=%s",
                     new_status, activate_response.get("Version"),
                 )
 
-                # WORKFLOW_COMPLETED or ACTIVE are both success states
-                if new_status in ("ACTIVE", "WORKFLOW_COMPLETED", "PENDING_WORKFLOW"):
+                if new_status in ("ACTIVE", "WORKFLOW_COMPLETED"):
                     return new_status
+
+                time.sleep(poll_interval_seconds)
+                continue
 
             # Unexpected status
             logger.warning(
                 "Unexpected grant status: %s (attempt %d/%d)",
                 current_status, attempt + 1, max_retries,
             )
+            time.sleep(poll_interval_seconds)
 
         except ClientError as e:
             error_code = e.response["Error"]["Code"]
@@ -399,11 +414,14 @@ def _activate_grant(
                     attempt + 1, error_code,
                     e.response["Error"]["Message"],
                 )
-                time.sleep(5)
+                time.sleep(poll_interval_seconds)
             else:
                 raise
 
-    logger.warning("Grant activation did not complete after %d attempts", max_retries)
+    logger.warning(
+        "Grant activation did not complete after %d attempts; last status: %s",
+        max_retries, last_status,
+    )
     return "ACTIVATION_PENDING"
 
 
