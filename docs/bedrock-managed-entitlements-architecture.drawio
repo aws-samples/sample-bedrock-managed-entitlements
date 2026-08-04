@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="draw.io" type="device">
+  <diagram name="Bedrock Managed Entitlements" id="bedrock-managed-entitlements">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" background="#FFFFFF">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="aws-cloud" value="AWS Cloud" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=1;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_aws_cloud_alt;stroke=#232F3E;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#232F3E;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="170" y="60" width="1260" height="720" as="geometry"/>
+        </mxCell>
+        <mxCell id="region-use1" value="us-east-1" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_region;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#147EBA;dashed=1;" vertex="1" parent="aws-cloud">
+          <mxGeometry x="40" y="50" width="1180" height="620" as="geometry"/>
+        </mxCell>
+        <mxCell id="zone-ingress" value="Agreement Event Ingress" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#d5e8d4;strokeColor=#82b366;fontColor=#248814;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontSize=12;" vertex="1" parent="region-use1">
+          <mxGeometry x="60" y="80" width="230" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="zone-automation" value="Grant Automation" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontColor=#147EBA;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontSize=12;" vertex="1" parent="region-use1">
+          <mxGeometry x="350" y="80" width="500" height="360" as="geometry"/>
+        </mxCell>
+        <mxCell id="zone-entitlements" value="Entitlement Distribution" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#f8cecc;strokeColor=#b85450;fontColor=#A61C00;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontSize=12;" vertex="1" parent="region-use1">
+          <mxGeometry x="910" y="80" width="220" height="360" as="geometry"/>
+        </mxCell>
+        <mxCell id="zone-notify" value="Notifications" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#fff2cc;strokeColor=#d6b656;fontColor=#7A5D00;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontSize=12;" vertex="1" parent="region-use1">
+          <mxGeometry x="350" y="470" width="780" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="admins" value="Admins" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#232F3D;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.users;" vertex="1" parent="1">
+          <mxGeometry x="50" y="585" width="70" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="marketplace-event" value="AWS Marketplace&#xa;private offer accepted" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#879196;fontColor=#232F3E;fontSize=12;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="25" y="215" width="120" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="eventbridge" value="Amazon EventBridge" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eventbridge;" vertex="1" parent="zone-ingress">
+          <mxGeometry x="85" y="60" width="60" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="lambda-handler" value="AWS Lambda&#xa;mppo-grants-handler" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="zone-automation">
+          <mxGeometry x="80" y="140" width="60" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="seller-table" value="Amazon DynamoDB&#xa;seller allow-list" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#C925D1;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.dynamodb;" vertex="1" parent="zone-automation">
+          <mxGeometry x="285" y="60" width="60" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="license-manager" value="AWS License Manager" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.license_manager;" vertex="1" parent="zone-automation">
+          <mxGeometry x="285" y="225" width="60" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="organizations" value="AWS Organizations" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.organizations;" vertex="1" parent="zone-entitlements">
+          <mxGeometry x="80" y="60" width="60" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="member-accounts" value="Member accounts&#xa;Bedrock access" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#b85450;fontColor=#232F3E;fontSize=12;align=center;verticalAlign=middle;" vertex="1" parent="zone-entitlements">
+          <mxGeometry x="45" y="225" width="130" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="sns" value="Amazon SNS" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sns;" vertex="1" parent="zone-notify">
+          <mxGeometry x="145" y="35" width="60" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="chatbot" value="AWS Chatbot" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.chatbot;" vertex="1" parent="zone-notify">
+          <mxGeometry x="475" y="35" width="60" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-marketplace-eventbridge" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="marketplace-event" target="eventbridge">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="label-marketplace-eventbridge" value="agreement&#xa;event" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="edge-marketplace-eventbridge">
+          <mxGeometry x="-0.05" relative="1" as="geometry"><mxPoint as="offset"/></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-eventbridge-lambda" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="region-use1" source="eventbridge" target="lambda-handler">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="label-eventbridge-lambda" value="invoke" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="edge-eventbridge-lambda">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint as="offset"/></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-lambda-dynamodb" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="zone-automation" source="lambda-handler" target="seller-table">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="label-lambda-dynamodb" value="verify&#xa;seller" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="edge-lambda-dynamodb">
+          <mxGeometry x="-0.15" relative="1" as="geometry"><mxPoint as="offset"/></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-lambda-license" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="zone-automation" source="lambda-handler" target="license-manager">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="label-lambda-license" value="create&#xa;grant" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="edge-lambda-license">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint as="offset"/></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-license-organizations" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#b85450;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="region-use1" source="license-manager" target="organizations">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="label-license-organizations" value="target&#xa;org" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="edge-license-organizations">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint as="offset"/></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-organizations-accounts" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#b85450;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="zone-entitlements" source="organizations" target="member-accounts">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="label-organizations-accounts" value="entitlement&#xa;access" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="edge-organizations-accounts">
+          <mxGeometry x="-0.15" relative="1" as="geometry"><mxPoint as="offset"/></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-lambda-sns" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="region-use1" source="lambda-handler" target="sns">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="label-lambda-sns" value="publish&#xa;status" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="edge-lambda-sns">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint as="offset"/></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-sns-chatbot" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d6b656;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="zone-notify" source="sns" target="chatbot">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="label-sns-chatbot" value="topic&#xa;message" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="edge-sns-chatbot">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint as="offset"/></mxGeometry>
+        </mxCell>
+        <mxCell id="edge-chatbot-admins" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d6b656;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="chatbot" target="admins">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="label-chatbot-admins" value="Slack&#xa;or email" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="edge-chatbot-admins">
+          <mxGeometry x="-0.15" relative="1" as="geometry"><mxPoint as="offset"/></mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

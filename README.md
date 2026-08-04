@@ -147,6 +147,10 @@ aws organizations describe-organization --query 'Organization.Id' --output text
 
 ### Architecture
 
+An editable AWS architecture diagram with AWS service icons is available at
+[`docs/bedrock-managed-entitlements-architecture.drawio`](docs/bedrock-managed-entitlements-architecture.drawio).
+Use it alongside the sequence diagram below: the Draw.io file shows the deployed AWS services and trust boundaries, while the Mermaid diagram shows the event flow and API sequence.
+
 ```mermaid
 sequenceDiagram
     participant MP as AWS Marketplace
