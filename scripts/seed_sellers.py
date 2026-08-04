@@ -57,10 +57,13 @@ def main():
         item = {
             "proposerAccountId": seller["proposerAccountId"],
             "name": seller.get("name", "Unknown"),
+            "issuerName": seller["issuerName"],
             "autoActivateGrant": seller.get("autoActivateGrant", True),
             "autoAcceptOffers": seller.get("autoAcceptOffers", False),
             "replaceLegacyGrants": seller.get("replaceLegacyGrants", False),
         }
+        if "grantTargets" in seller:
+            item["grantTargets"] = seller["grantTargets"]
 
         if args.dry_run:
             print(f"  [DRY RUN] Would write: {json.dumps(item)}")

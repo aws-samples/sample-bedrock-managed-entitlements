@@ -93,6 +93,7 @@ def lambda_handler(event: dict, context) -> dict:
         proposer_account_id = proposer.get("accountId", "")
         offer_id = offer.get("id", "")
         intent = agreement.get("intent", "UNKNOWN")
+        acceptance_time = agreement.get("acceptanceTime", "")
 
         if not agreement_id:
             logger.warning("No agreement ID in event, skipping")
@@ -101,6 +102,10 @@ def lambda_handler(event: dict, context) -> dict:
         if not proposer_account_id:
             logger.warning("No proposer account ID in event, skipping")
             return {"status": "skipped", "reason": "no_proposer_account"}
+
+        if not acceptance_time:
+            logger.warning("No agreement acceptance time in event, skipping")
+            return {"status": "skipped", "reason": "no_acceptance_time"}
 
         logger.info(
             "Processing agreement %s from proposer %s (intent: %s, offer: %s)",
@@ -134,11 +139,14 @@ def lambda_handler(event: dict, context) -> dict:
             return {"status": "skipped", "reason": "seller_not_allowed"}
 
         seller_name = seller_config.get("name", proposer_account_id)
+        issuer_name = seller_config["issuerName"]
 
         # Step 2: Discover the license created by this subscription
         logger.info("Step 2: Discovering license for agreement %s", agreement_id)
         license_info = discover_license(
             proposer_account_id=proposer_account_id,
+            issuer_name=issuer_name,
+            acceptance_time=acceptance_time,
             home_region=HOME_REGION,
         )
 
@@ -165,13 +173,26 @@ def lambda_handler(event: dict, context) -> dict:
         # Determine grant targets from seller config (default: entire organization)
         grant_targets = seller_config.get("grantTargets")
         if grant_targets:
-            # Validate targets format
+            # Validate targets format. A non-empty grantTargets that reduces
+            # to zero valid entries means the operator intended to scope this
+            # seller and the config is broken — raise rather than silently
+            # falling through to the org-wide default below.
             targets_list = []
+            invalid = []
             for t in grant_targets:
                 if isinstance(t, dict) and "type" in t and "id" in t:
                     targets_list.append(t)
                 else:
-                    logger.warning("Invalid grant target, skipping: %s", t)
+                    invalid.append(t)
+            if invalid:
+                logger.warning("Invalid grant target(s) found: %s", invalid)
+            if not targets_list:
+                raise ValueError(
+                    f"Seller {seller_name} has a non-empty grantTargets "
+                    f"({grant_targets}) but none are valid — refusing to "
+                    f"fall back to an org-wide grant. Fix the seller's "
+                    f"grantTargets entries in the allow-list table."
+                )
             logger.info(
                 "Step 3: Creating %d grant(s) on license %s (targets: %s)",
                 len(targets_list), license_arn,

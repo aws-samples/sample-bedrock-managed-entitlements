@@ -19,62 +19,68 @@ logger = logging.getLogger(__name__)
 
 def discover_license(
     proposer_account_id: str,
+    issuer_name: str,
+    acceptance_time: str,
     home_region: str = "us-east-1",
     max_retries: int = 5,
     base_delay: float = 2.0,
 ) -> Optional[dict]:
     """Find the License Manager license for a seller's subscription.
 
-    Searches for licenses where the issuer matches the proposer.
-    Licenses from Marketplace subscriptions have the seller's name as issuer.
+    Filters strictly on the seller's issuer name and requires the license to
+    have been created at or after the agreement's acceptance time. Fails
+    closed (returns None) on zero or ambiguous (multiple) matches rather than
+    guessing — an unrelated pre-existing license must never be treated as the
+    one issued by this agreement.
 
     Args:
-        proposer_account_id: Seller's AWS account ID
+        proposer_account_id: Seller's AWS account ID (used only for logging;
+            License Manager does not expose the seller account on a license,
+            so it cannot be used as a filter — see issuer_name instead)
+        issuer_name: Expected `Issuer.Name` on the license, sourced from the
+            seller allow-list entry. Required for a positive match.
+        acceptance_time: ISO8601 agreement acceptance time from the
+            EventBridge event. Licenses created before this are excluded.
         home_region: Region where licenses are created (always us-east-1)
         max_retries: Number of retry attempts
         base_delay: Base delay for exponential backoff (seconds)
 
     Returns:
         Dict with license_arn, product_name, product_sku, issuer_name
-        or None if not found
+        or None if not found or the match is ambiguous
     """
     license_manager = boto3.client("license-manager", region_name=home_region)
 
     for attempt in range(max_retries):
         try:
-            # List all received licenses and find the most recent one
-            # from this seller. Filter by Status=AVAILABLE.
             licenses = _list_all_licenses(license_manager)
 
-            # Find licenses that match the seller
-            # Marketplace licenses include the seller account in metadata
             matching = []
             for lic in licenses:
                 if lic.get("Status") != "AVAILABLE":
                     continue
 
-                # Check if this license is from the expected seller
-                # The Beneficiary field contains the buyer account
-                # The Issuer.Name often contains the seller/product info
-                issuer_name = lic.get("Issuer", {}).get("Name", "")
-                product_name = lic.get("ProductName", "")
-                product_sku = lic.get("ProductSKU", "")
+                lic_issuer_name = lic.get("Issuer", {}).get("Name", "")
+                create_time = lic.get("CreateTime", "")
 
-                # For Marketplace-sourced licenses, we match by checking
-                # if the license is from AWS Marketplace (issuer pattern)
-                # and was recently created
-                if _is_marketplace_license(lic):
-                    matching.append({
-                        "license_arn": lic["LicenseArn"],
-                        "product_name": product_name,
-                        "product_sku": product_sku,
-                        "issuer_name": issuer_name,
-                        "create_time": lic.get("CreateTime", ""),
-                    })
+                # Require an exact issuer match and a license created no
+                # earlier than the agreement's acceptance — this is what
+                # actually ties the license to this specific agreement,
+                # since ProductSKU alone matches any license for the product.
+                if lic_issuer_name != issuer_name:
+                    continue
+                if create_time and create_time < acceptance_time:
+                    continue
 
-            if matching:
-                # Return the most recently created matching license
-                matching.sort(key=lambda x: x["create_time"], reverse=True)
+                matching.append({
+                    "license_arn": lic["LicenseArn"],
+                    "product_name": lic.get("ProductName", ""),
+                    "product_sku": lic.get("ProductSKU", ""),
+                    "issuer_name": lic_issuer_name,
+                    "create_time": create_time,
+                })
+
+            if len(matching) == 1:
                 result = matching[0]
                 logger.info(
                     "Found license: %s (product: %s, issuer: %s)",
@@ -83,6 +89,14 @@ def discover_license(
                     result["issuer_name"],
                 )
                 return result
+
+            if len(matching) > 1:
+                logger.error(
+                    "Ambiguous license match for proposer %s (issuer %s): "
+                    "%d licenses matched, expected exactly 1. Failing closed.",
+                    proposer_account_id, issuer_name, len(matching),
+                )
+                return None
 
         except ClientError as e:
             logger.warning(
@@ -98,8 +112,8 @@ def discover_license(
             time.sleep(wait_time)
 
     logger.error(
-        "License not found after %d attempts for proposer %s",
-        max_retries, proposer_account_id,
+        "License not found after %d attempts for proposer %s (issuer %s)",
+        max_retries, proposer_account_id, issuer_name,
     )
     return None
 
@@ -122,24 +136,3 @@ def _list_all_licenses(client) -> list:
             break
 
     return licenses
-
-
-def _is_marketplace_license(license_data: dict) -> bool:
-    """Determine if a license originated from AWS Marketplace.
-
-    Marketplace-sourced licenses typically have:
-    - A ProductSKU field populated
-    - Issuer name pattern from Marketplace
-    - ReceivedMetadata with allowed operations
-    """
-    # Marketplace licenses always have a ProductSKU
-    if license_data.get("ProductSKU"):
-        return True
-
-    # Check for Marketplace indicators in metadata
-    metadata = license_data.get("LicenseMetadata", [])
-    for item in metadata:
-        if item.get("Name") == "AWSMarketplace" or "marketplace" in item.get("Value", "").lower():
-            return True
-
-    return False
