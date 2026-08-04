@@ -231,18 +231,81 @@ class MppoGrantsAutomationStack(Stack):
             )
         )
 
-        # Auto-accept Lambda removed: it did not work against the live
-        # Marketplace Agreement API (wrong param casing, invalid Status enum
-        # value, non-existent response keys, and it never called
-        # CreateAgreementRequest despite holding IAM permission to). It had
-        # zero test coverage. Re-add only once rewritten against the real
-        # API with tests — see lambda/auto_accept_handler.py history.
-        if config.get("enableAutoAccept"):
-            raise ValueError(
-                "enableAutoAccept is set but the auto-accept feature has "
-                "been removed from this stack (it never worked against the "
-                "live Marketplace Agreement API). Remove enableAutoAccept "
-                "from your config."
+        # ─── Auto-Accept Lambda (OPTIONAL — disabled by default) ───────────
+        # This Lambda checks for private offers from trusted sellers and
+        # auto-accepts them. Only deployed if enableAutoAccept is true.
+        #
+        # Rewritten against the live Marketplace Discovery + Agreement APIs
+        # (offers are discovered via marketplace-discovery.ListPurchaseOptions
+        # + GetOffer/GetOfferTerms, then accepted via marketplace-agreement.
+        # CreateAgreementRequest + AcceptAgreementRequest) — see
+        # lambda/auto_accept_handler.py and tests/test_auto_accept_handler.py.
+        enable_auto_accept = config.get("enableAutoAccept", False)
+
+        if enable_auto_accept:
+            auto_accept_handler = lambda_.Function(
+                self,
+                "AutoAcceptHandler",
+                function_name="mppo-auto-accept-handler",
+                runtime=lambda_.Runtime.PYTHON_3_12,
+                code=lambda_.Code.from_asset(
+                    os.path.join(os.path.dirname(__file__), "..", "lambda")
+                ),
+                handler="auto_accept_handler.lambda_handler",
+                timeout=Duration.minutes(5),
+                memory_size=256,
+                environment={
+                    "SELLER_TABLE_NAME": seller_table.table_name,
+                    "SNS_TOPIC_ARN": notification_topic.topic_arn,
+                    "HOME_REGION": "us-east-1",
+                },
+                log_retention=logs.RetentionDays.TWO_WEEKS,
+            )
+
+            # Permissions
+            seller_table.grant_read_data(auto_accept_handler)
+            notification_topic.grant_publish(auto_accept_handler)
+
+            auto_accept_handler.add_to_role_policy(
+                iam.PolicyStatement(
+                    sid="MarketplaceDiscoveryRead",
+                    effect=iam.Effect.ALLOW,
+                    actions=[
+                        "aws-marketplace:ListPurchaseOptions",
+                        "aws-marketplace:GetOffer",
+                        "aws-marketplace:GetOfferTerms",
+                    ],
+                    resources=["*"],
+                )
+            )
+
+            auto_accept_handler.add_to_role_policy(
+                iam.PolicyStatement(
+                    sid="MarketplaceAgreementAccept",
+                    effect=iam.Effect.ALLOW,
+                    actions=[
+                        "aws-marketplace:CreateAgreementRequest",
+                        "aws-marketplace:AcceptAgreementRequest",
+                    ],
+                    resources=["*"],
+                )
+            )
+
+            # Schedule: check every hour
+            auto_accept_schedule = config.get("autoAcceptSchedule", "rate(1 hour)")
+            auto_accept_rule = events.Rule(
+                self,
+                "AutoAcceptSchedule",
+                rule_name="mppo-auto-accept-schedule",
+                description="Periodically checks for pending offers to auto-accept (opt-in)",
+                schedule=events.Schedule.expression(auto_accept_schedule),
+            )
+            auto_accept_rule.add_target(targets.LambdaFunction(auto_accept_handler))
+
+            cdk.CfnOutput(
+                self, "AutoAcceptLambdaArn",
+                value=auto_accept_handler.function_arn,
+                description="Auto-accept handler Lambda ARN (opt-in)",
             )
 
         # ─── Outputs ────────────────────────────────────────────────────────
