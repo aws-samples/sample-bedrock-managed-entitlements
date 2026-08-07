@@ -1,6 +1,6 @@
-# Amazon Bedrock Managed Entitlements - Automated Grant Distribution
+# Automated Grant Distribution for Amazon Bedrock
 
-A sample implementation that automates the distribution of [Amazon Bedrock Managed Entitlements](https://docs.aws.amazon.com/bedrock/latest/userguide/managed-entitlements.html) across your AWS Organization. Deploy this in your management account to automatically create and activate License Manager grants whenever a new Marketplace private offer is accepted - eliminating manual per-account grant management.
+A sample implementation that automates the distribution of [managed entitlements for Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/managed-entitlements.html) across your AWS Organization. Deploy this in your management account to automatically create and activate License Manager grants whenever a new Marketplace private offer is accepted - eliminating manual per-account grant management.
 
 > **This is a sample.** It is intended as a starting point for customers to review, adapt, and extend to meet their own security, compliance, and operational requirements. See [Security](#security) for shared responsibility guidance.
 
@@ -19,7 +19,7 @@ Even when you manually distribute grants via AWS License Manager, those grants l
 
 ## Solution
 
-[Amazon Bedrock Managed Entitlements](https://docs.aws.amazon.com/bedrock/latest/userguide/managed-entitlements.html) solves the distribution problem: subscribe once, create a single grant targeting your Organization ID, and every member account inherits access automatically.
+[Managed entitlements for Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/managed-entitlements.html) solves the distribution problem: subscribe once, create a single grant targeting your Organization ID, and every member account inherits access automatically.
 
 This sample automates the grant distribution step so you never have to manually create or activate grants again:
 
@@ -30,7 +30,7 @@ This sample automates the grant distribution step so you never have to manually 
 5. **Retries activation asynchronously** if License Manager is still processing the grant
 6. **Notifies** your team via Amazon SNS
 
-📎 **Reference**: [Bedrock Managed Entitlements slides](https://wirjo.github.io/slides/bedrock-managed-entitlements/)
+📎 **Reference**: [Managed entitlements for Bedrock slides](https://wirjo.github.io/slides/bedrock-managed-entitlements/)
 
 ---
 
