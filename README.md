@@ -1,4 +1,4 @@
-# Automated Grant Distribution for Amazon Bedrock
+# Automate model subscriptions with managed entitlements for Amazon Bedrock
 
 A sample implementation that automates the distribution of [managed entitlements for Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/managed-entitlements.html) across your AWS Organization. Deploy this in your management account to automatically create and activate License Manager grants whenever a new Marketplace private offer is accepted - eliminating manual per-account grant management.
 
