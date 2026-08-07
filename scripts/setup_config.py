@@ -126,7 +126,7 @@ def prompt_yes_no(question: str, default: bool = True) -> bool:
 
 def main():
     print("=" * 60)
-    print("  Bedrock Managed Entitlements — Configuration Setup")
+    print("  Managed Entitlements for Amazon Bedrock — Configuration Setup")
     print("=" * 60)
     print()
 
