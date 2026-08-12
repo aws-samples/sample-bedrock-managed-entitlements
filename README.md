@@ -45,22 +45,53 @@ Before deploying, verify:
 1. **AWS Organizations - "All Features" Enabled**
    - Open [AWS Organizations console](https://console.aws.amazon.com/organizations/) → Settings
    - Must say "All features" (not "Consolidated billing" only)
+   - This script checks the setting, but does not enable it automatically because AWS Organizations might need member account handshakes.
 
-2. **License Manager Service-Linked Role**
-   - Open [License Manager console](https://console.aws.amazon.com/license-manager/) in `us-east-1`
-   - Accept the SLR, enable "Link AWS Organization accounts"
+2. **Development Tools** - AWS CDK v2, Python 3.12+, AWS CLI with management account credentials
 
-3. **AWS Marketplace Trusted Access**
-   - [Marketplace Settings](https://console.aws.amazon.com/marketplace/home#/settings) → "Enable trusted access across your organization"
+3. **License Manager and Marketplace organization integration**
+   - Run the bootstrap check from the management account in `us-east-1`:
 
-4. **Development Tools** - AWS CDK v2, Python 3.12+, AWS CLI with management account credentials
+```bash
+python3 scripts/bootstrap_prereqs.py --check --region us-east-1
+```
+
+   - If the check reports `APPLY` items, review them before making changes. Apply mode can enable organization-wide License Manager and Marketplace settings, so you must confirm the current AWS account ID:
+
+```bash
+python3 scripts/bootstrap_prereqs.py \
+  --apply \
+  --region us-east-1 \
+  --confirm-account-id 123456789012
+```
+
+   - This can enable License Manager organization integration and AWS Marketplace trusted access. It also checks the service-linked roles used by License Manager and Marketplace license management.
+   - If you use a License Manager delegated administrator account, pass and confirm it explicitly:
+
+```bash
+python3 scripts/bootstrap_prereqs.py \
+  --apply \
+  --region us-east-1 \
+  --confirm-account-id 123456789012 \
+  --delegated-admin-account-id 222233334444 \
+  --confirm-delegated-admin-account-id 222233334444
+```
 
 ### Deploy
 
 ```bash
 # Clone
-git clone https://github.com/wirjo/sample-bedrock-managed-entitlements.git
+git clone https://github.com/aws-samples/sample-bedrock-managed-entitlements.git
 cd sample-bedrock-managed-entitlements
+
+# Verify or enable License Manager and Marketplace org prerequisites
+python3 scripts/bootstrap_prereqs.py --check --region us-east-1
+
+# Review the output, then apply only after confirming the target account
+python3 scripts/bootstrap_prereqs.py \
+  --apply \
+  --region us-east-1 \
+  --confirm-account-id ACCOUNT_ID
 
 # Configure (interactive - auto-discovers org ID and licenses)
 python3 scripts/setup_config.py
@@ -264,10 +295,10 @@ See [`scripts/README.md`](scripts/README.md) for full usage.
 # Unit tests (32 passing - mocked AWS services)
 pip install -r requirements-dev.txt && pytest tests/ -v
 
-# Simulate EventBridge event locally
+# Invoke the handler locally with an EventBridge-shaped payload
 python scripts/simulate_event.py --seller-account 123456789012
 
-# Inject test event into live EventBridge
+# Invoke the deployed Lambda with an EventBridge-shaped payload
 python scripts/simulate_event.py --seller-account 123456789012 --live
 ```
 
@@ -313,6 +344,7 @@ This sample deploys infrastructure into **your** AWS account. Under the [AWS Sha
 - sns:Publish (notification topic only)
 - sts:GetCallerIdentity
 - organizations:DescribeOrganization
+- organizations:ListAccounts
 
 # Auto-accept Lambda (only deployed if enabled)
 - aws-marketplace:ListPurchaseOptions

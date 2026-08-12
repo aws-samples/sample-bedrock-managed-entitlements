@@ -181,6 +181,7 @@ class MppoGrantsAutomationStack(Stack):
                 effect=iam.Effect.ALLOW,
                 actions=[
                     "organizations:DescribeOrganization",
+                    "organizations:ListAccounts",
                 ],
                 resources=["*"],
             )
