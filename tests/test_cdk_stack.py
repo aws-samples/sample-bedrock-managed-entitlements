@@ -10,6 +10,7 @@ Validates that the deployed infrastructure matches expected configuration:
 import json
 import os
 import sys
+from contextlib import contextmanager
 
 import pytest
 
@@ -19,15 +20,44 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "cdk"))
 from aws_cdk.assertions import Match
 
 
+@contextmanager
+def isolated_config(config: dict | None = None):
+    """Temporarily hide or replace local sellers.json during CDK synth tests."""
+    config_dir = os.path.join(os.path.dirname(__file__), "..", "config")
+    config_path = os.path.join(config_dir, "sellers.json")
+
+    original = None
+    if os.path.exists(config_path):
+        with open(config_path) as f:
+            original = f.read()
+
+    try:
+        if config is None:
+            if os.path.exists(config_path):
+                os.remove(config_path)
+        else:
+            with open(config_path, "w") as f:
+                json.dump(config, f)
+        yield
+    finally:
+        if original is None:
+            if os.path.exists(config_path):
+                os.remove(config_path)
+        else:
+            with open(config_path, "w") as f:
+                f.write(original)
+
+
 def get_template():
     """Synthesize the CDK stack and return the CloudFormation template."""
     import aws_cdk as cdk
     from aws_cdk.assertions import Template
     from mppo_stack import MppoGrantsAutomationStack
 
-    app = cdk.App()
-    stack = MppoGrantsAutomationStack(app, "TestStack")
-    return Template.from_stack(stack)
+    with isolated_config():
+        app = cdk.App()
+        stack = MppoGrantsAutomationStack(app, "TestStack")
+        return Template.from_stack(stack)
 
 
 def get_template_with_auto_accept():
@@ -44,17 +74,10 @@ def get_template_with_auto_accept():
         config = json.load(f)
     config["enableAutoAccept"] = True
 
-    created = not os.path.exists(config_path)
-    with open(config_path, "w") as f:
-        json.dump(config, f)
-
-    try:
+    with isolated_config(config):
         app = cdk.App()
         stack = MppoGrantsAutomationStack(app, "TestStackAutoAccept")
         return Template.from_stack(stack)
-    finally:
-        if created:
-            os.remove(config_path)
 
 
 def test_eventbridge_rule_pattern():
@@ -164,6 +187,28 @@ def test_lambda_has_license_manager_permissions():
                             "license-manager:CreateGrantVersion",
                             "license-manager:GetGrant",
                             "license-manager:ListDistributedGrants",
+                        ],
+                        "Effect": "Allow",
+                    })
+                ])
+            }
+        },
+    )
+
+
+def test_lambda_has_organizations_permissions_for_account_targets():
+    """Lambda can validate account-scoped grant targets against the org."""
+    template = get_template()
+
+    template.has_resource_properties(
+        "AWS::IAM::Policy",
+        {
+            "PolicyDocument": {
+                "Statement": Match.array_with([
+                    Match.object_like({
+                        "Action": [
+                            "organizations:DescribeOrganization",
+                            "organizations:ListAccounts",
                         ],
                         "Effect": "Allow",
                     })

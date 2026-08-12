@@ -7,8 +7,9 @@ Utility scripts for deployment, testing, and discount verification.
 | Script | Run From | Purpose |
 |--------|----------|---------|
 | `setup_config.py` | Management account | **Start here** — interactive setup that auto-discovers org ID and licenses |
+| `bootstrap_prereqs.py` | Management account | Check and optionally enable License Manager and Marketplace organization prerequisites |
 | `seed_sellers.py` | Management account | Populate DynamoDB with allowed sellers after `cdk deploy` |
-| `simulate_event.py` | Management account | Generate/inject test EventBridge events without a live offer |
+| `simulate_event.py` | Management account | Generate test events and invoke the handler locally or deployed Lambda |
 | `e2e_validate.py` | Management account | Validate all infrastructure components are correctly deployed |
 | `create_grant_manual.py` | Management account | Create grants for existing subscriptions (backfill) |
 | `bedrock_discount_check.py` | Member account OR management account | Verify negotiated pricing is actually flowing |
@@ -20,13 +21,30 @@ Utility scripts for deployment, testing, and discount verification.
 These scripts deploy, configure, or test the automation infrastructure. Run them from the **management account** in `us-east-1`:
 
 ```bash
+# Check prerequisite services without making changes
+python3 scripts/bootstrap_prereqs.py --check --region us-east-1
+
+# Review the output, then apply org-wide prerequisites only after confirming the target account
+python3 scripts/bootstrap_prereqs.py \
+    --apply \
+    --region us-east-1 \
+    --confirm-account-id 123456789012
+
+# Optional: register a License Manager delegated admin only with explicit confirmation
+python3 scripts/bootstrap_prereqs.py \
+    --apply \
+    --region us-east-1 \
+    --confirm-account-id 123456789012 \
+    --delegated-admin-account-id 222233334444 \
+    --confirm-delegated-admin-account-id 222233334444
+
 # After cdk deploy — seed the seller allow-list
 python3 scripts/seed_sellers.py --config config/sellers.json
 
 # Validate all infra components
 python3 scripts/e2e_validate.py --org-id o-xxxxxxxxxx --seller-account 444455556666
 
-# Inject a test event (simulates a private offer acceptance)
+# Invoke the deployed Lambda with a synthetic Marketplace event
 python3 scripts/simulate_event.py --seller-account 444455556666 --live
 
 # Create a grant for a pre-existing subscription

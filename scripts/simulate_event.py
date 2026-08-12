@@ -3,13 +3,13 @@
 This script generates a realistic "Purchase Agreement Created - Acceptor" event
 and either:
 1. Invokes the Lambda handler locally (default)
-2. Injects it into EventBridge via put-events (with --live flag)
+2. Invokes the deployed Lambda function (with --live flag)
 
 Usage:
     # Local simulation (no AWS calls)
     python scripts/simulate_event.py --seller-account 444455556666 --agreement-id agmt-test123
 
-    # Live injection into EventBridge (requires deployed stack)
+    # Live invocation of the deployed Lambda (requires deployed stack)
     python scripts/simulate_event.py --seller-account 444455556666 --live
 """
 
@@ -95,7 +95,12 @@ def main():
     parser.add_argument(
         "--live",
         action="store_true",
-        help="Inject into EventBridge (requires AWS credentials)",
+        help="Invoke the deployed Lambda (requires AWS credentials)",
+    )
+    parser.add_argument(
+        "--function-name",
+        default="mppo-grants-handler",
+        help="Lambda function name for --live (default: mppo-grants-handler)",
     )
     parser.add_argument(
         "--output",
@@ -120,26 +125,25 @@ def main():
     if args.live:
         import boto3
 
-        client = boto3.client("events", region_name="us-east-1")
-        response = client.put_events(
-            Entries=[
-                {
-                    "Source": event["source"],
-                    "DetailType": event["detail-type"],
-                    "Detail": json.dumps(event["detail"]),
-                    "Resources": event["resources"],
-                }
-            ]
+        client = boto3.client("lambda", region_name="us-east-1")
+        response = client.invoke(
+            FunctionName=args.function_name,
+            InvocationType="RequestResponse",
+            Payload=json.dumps(event).encode(),
         )
-        print("EventBridge put_events response:")
-        print(json.dumps(response, indent=2, default=str))
+        payload = response["Payload"].read().decode()
+        print("Lambda invoke response:")
+        print(json.dumps({
+            "StatusCode": response.get("StatusCode"),
+            "FunctionError": response.get("FunctionError"),
+            "Payload": json.loads(payload or "{}"),
+        }, indent=2, default=str))
 
-        failed = response.get("FailedEntryCount", 0)
-        if failed > 0:
-            print(f"\n⚠️  {failed} event(s) failed to inject")
+        if response.get("FunctionError"):
+            print("\n⚠️  Lambda returned a function error")
             sys.exit(1)
         else:
-            print("\n✅ Event injected successfully")
+            print("\n✅ Lambda invoked successfully")
     else:
         # Local mode — invoke handler directly
         print("Generated event:")
