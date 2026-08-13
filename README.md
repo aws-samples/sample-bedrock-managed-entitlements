@@ -236,6 +236,8 @@ Grants auto-accept but land in **Disabled** state. Until explicitly activated, a
 
 This automation activates grants automatically via `CreateGrantVersion(Status=ACTIVE)`.
 
+When creating the grant, the automation derives `AllowedOperations` from the parent License Manager grant when License Manager exposes that metadata. If the parent grant cannot be read, it falls back to the default Bedrock Marketplace operation set.
+
 License Manager can take hours or days to move a newly created grant through workflow states before it becomes activatable. If the first Lambda invocation sees the grant still processing, it records the grant in `mppo-pending-grants`. A scheduled retry rule (`mppo-grant-activation-retry`, every 6 hours) keeps checking the grant and activates it once License Manager reports `DISABLED`.
 
 ### Legacy Offer Cleanup

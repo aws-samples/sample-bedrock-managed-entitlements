@@ -35,6 +35,21 @@ TARGET_ACCOUNT = "account"
 _ACCOUNT_ID_RE = re.compile(r"^\d{12}$")
 _ORG_ID_RE = re.compile(r"^o-[a-z0-9]{10,32}$")
 _OU_ID_RE = re.compile(r"^(o-[a-z0-9]{10,32}/)?ou-[a-z0-9]{4,32}-[a-z0-9]{8,32}$")
+DEFAULT_ALLOWED_OPERATIONS = [
+    "CheckoutLicense",
+    "CheckInLicense",
+    "ExtendConsumptionLicense",
+    "ListPurchasedLicenses",
+    "CreateToken",
+]
+_DUPLICATE_GRANT_HINTS = (
+    "already has a grant",
+    "already distributed",
+    "already exist",
+    "already exists",
+    "conflict",
+    "duplicate",
+)
 
 
 def create_and_activate_grants(
@@ -46,6 +61,7 @@ def create_and_activate_grants(
     home_region: str = "us-east-1",
     auto_activate: bool = True,
     replace_legacy_grants: bool = False,
+    allowed_operations: list[str] | None = None,
 ) -> list[dict]:
     """Create and activate grants for one or more targets.
 
@@ -65,6 +81,9 @@ def create_and_activate_grants(
         home_region: License home region (always us-east-1 for Marketplace)
         auto_activate: Whether to immediately activate grants
         replace_legacy_grants: If True, uses ALL_GRANTS_PERMITTED_BY_ISSUER
+        allowed_operations: Optional operations to grant. If omitted, operations
+            are derived from the parent grant when available, then fall back to
+            the Bedrock default operation set.
 
     Returns:
         List of result dicts, one per target
@@ -80,6 +99,7 @@ def create_and_activate_grants(
             home_region=home_region,
             auto_activate=auto_activate,
             replace_legacy_grants=replace_legacy_grants,
+            allowed_operations=allowed_operations,
         )
         results.append(result)
     return results
@@ -153,6 +173,7 @@ def create_and_activate_grant(
     auto_activate: bool = True,
     replace_legacy_grants: bool = False,
     grant_targets: list[dict] | None = None,
+    allowed_operations: list[str] | None = None,
 ) -> dict:
     """Create and activate grant(s). Backward-compatible single-grant entry point.
 
@@ -168,6 +189,8 @@ def create_and_activate_grant(
         auto_activate: Whether to immediately activate
         replace_legacy_grants: Use ALL_GRANTS_PERMITTED_BY_ISSUER
         grant_targets: Optional list of targets. Overrides organization_id if provided.
+        allowed_operations: Optional operations to grant. If omitted, operations
+            are derived from the parent grant when available.
 
     Returns:
         Dict with grant results (single grant returns flat dict for backward compat)
@@ -182,6 +205,7 @@ def create_and_activate_grant(
             home_region=home_region,
             auto_activate=auto_activate,
             replace_legacy_grants=replace_legacy_grants,
+            allowed_operations=allowed_operations,
         )
         # Return summary
         return {
@@ -203,6 +227,7 @@ def create_and_activate_grant(
             home_region=home_region,
             auto_activate=auto_activate,
             replace_legacy_grants=replace_legacy_grants,
+            allowed_operations=allowed_operations,
         )
         return {
             "grant_arn": result["grant_arn"],
@@ -276,6 +301,7 @@ def _create_single_grant(
     home_region: str = "us-east-1",
     auto_activate: bool = True,
     replace_legacy_grants: bool = False,
+    allowed_operations: list[str] | None = None,
 ) -> dict:
     """Create and activate a single grant for one target.
 
@@ -287,6 +313,8 @@ def _create_single_grant(
         home_region: License home region
         auto_activate: Whether to immediately activate
         replace_legacy_grants: Use ALL_GRANTS_PERMITTED_BY_ISSUER
+        allowed_operations: Optional operations to grant. If omitted, operations
+            are derived from the parent grant when available.
 
     Returns:
         Dict with grant_arn, status, target_type, target_id
@@ -298,10 +326,16 @@ def _create_single_grant(
     principal_arn = _build_principal_arn(target, account_id)
     grant_name = _build_grant_name(seller_name, product_name, target)
     client_token = str(uuid.uuid4())
+    operations = _resolve_allowed_operations(
+        license_manager,
+        license_arn,
+        allowed_operations,
+    )
 
     logger.info(
-        "Creating grant: name=%s, license=%s, principal=%s, target_type=%s",
-        grant_name, license_arn, principal_arn, target["type"],
+        "Creating grant: name=%s, license=%s, principal=%s, "
+        "target_type=%s, operations=%s",
+        grant_name, license_arn, principal_arn, target["type"], operations,
     )
 
     # Create the grant
@@ -312,13 +346,7 @@ def _create_single_grant(
             LicenseArn=license_arn,
             Principals=[principal_arn],
             HomeRegion=home_region,
-            AllowedOperations=[
-                "CheckoutLicense",
-                "CheckInLicense",
-                "ExtendConsumptionLicense",
-                "ListPurchasedLicenses",
-                "CreateToken",
-            ],
+            AllowedOperations=operations,
         )
         grant_arn = create_response["GrantArn"]
         grant_status = create_response.get("Status", "UNKNOWN")
@@ -329,8 +357,7 @@ def _create_single_grant(
         )
 
     except ClientError as e:
-        error_code = e.response["Error"]["Code"]
-        if error_code == "ValidationException" and "already exists" in str(e).lower():
+        if _is_duplicate_grant_error(e):
             logger.info("Grant may already exist, searching for it...")
             grant_arn = _find_existing_grant(
                 license_manager, license_arn, principal_arn
@@ -502,16 +529,114 @@ def _find_existing_grant(
 ) -> str | None:
     """Find an existing grant for the given license and principal."""
     try:
-        response = client.list_distributed_grants(
-            Filters=[
-                {"Name": "LicenseArn", "Values": [license_arn]},
-                {"Name": "GranteePrincipalARN", "Values": [principal_arn]},
-            ]
-        )
-        grants = response.get("Grants", [])
-        if grants:
-            return grants[0]["GrantArn"]
+        token = None
+        while True:
+            kwargs = {
+                "Filters": [
+                    {"Name": "LicenseArn", "Values": [license_arn]},
+                    {"Name": "GranteePrincipalARN", "Values": [principal_arn]},
+                ]
+            }
+            if token:
+                kwargs["NextToken"] = token
+            response = client.list_distributed_grants(**kwargs)
+            grants = response.get("Grants", [])
+            if grants:
+                return grants[0]["GrantArn"]
+            token = response.get("NextToken")
+            if not token:
+                return None
     except ClientError as e:
         logger.warning("Error searching for existing grant: %s", str(e))
 
     return None
+
+
+def _resolve_allowed_operations(
+    client,
+    license_arn: str,
+    allowed_operations: list[str] | None = None,
+) -> list[str]:
+    """Return grant operations from explicit config, parent grant, or defaults."""
+    if allowed_operations:
+        return _normalise_allowed_operations(allowed_operations)
+
+    parent_operations = _derive_allowed_operations_from_parent(client, license_arn)
+    if parent_operations:
+        return parent_operations
+
+    logger.warning(
+        "Could not derive allowed operations from parent grant for license %s; "
+        "using default Bedrock operation set",
+        license_arn,
+    )
+    return list(DEFAULT_ALLOWED_OPERATIONS)
+
+
+def _derive_allowed_operations_from_parent(client, license_arn: str) -> list[str]:
+    """Derive distributable operations from the grantor's parent grant."""
+    try:
+        license_record = _find_received_license(client, license_arn)
+        if not license_record:
+            return []
+        parent_grant_arn = _parent_grant_arn_from_license(license_record)
+        if not parent_grant_arn:
+            return []
+        parent_grant = client.get_grant(GrantArn=parent_grant_arn)["Grant"]
+        operations = (
+            parent_grant.get("AllowedOperations")
+            or parent_grant.get("GrantedOperations")
+            or []
+        )
+        return _normalise_allowed_operations(operations)
+    except ClientError as e:
+        logger.warning(
+            "Error deriving allowed operations from parent grant for %s: %s",
+            license_arn, str(e),
+        )
+        return []
+
+
+def _find_received_license(client, license_arn: str) -> dict | None:
+    """Find a received license record by ARN."""
+    token = None
+    while True:
+        kwargs = {"MaxResults": 100}
+        if token:
+            kwargs["NextToken"] = token
+        response = client.list_received_licenses(**kwargs)
+        for license_record in response.get("Licenses", []):
+            if license_record.get("LicenseArn") == license_arn:
+                return license_record
+        token = response.get("NextToken")
+        if not token:
+            return None
+
+
+def _parent_grant_arn_from_license(license_record: dict) -> str | None:
+    """Extract the parent grant ARN from LicenseMetadata."""
+    for metadata in license_record.get("LicenseMetadata", []):
+        if metadata.get("Name") == "grantArn":
+            return metadata.get("Value")
+    return None
+
+
+def _normalise_allowed_operations(operations: list[str]) -> list[str]:
+    """Remove CreateGrant and duplicates while preserving operation order."""
+    normalised = []
+    seen = set()
+    for operation in operations:
+        if operation == "CreateGrant" or operation in seen:
+            continue
+        normalised.append(operation)
+        seen.add(operation)
+    return normalised
+
+
+def _is_duplicate_grant_error(error: ClientError) -> bool:
+    """Return True when License Manager reports an already-created grant."""
+    error_data = error.response.get("Error", {})
+    code = error_data.get("Code", "")
+    message = error_data.get("Message", "")
+    blob = f"{code} {message}".lower()
+    return any(hint in blob for hint in _DUPLICATE_GRANT_HINTS)
