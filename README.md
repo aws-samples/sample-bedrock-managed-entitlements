@@ -127,6 +127,8 @@ Auto-discovers your Organization ID, lists existing licenses, and generates conf
     {
       "name": "Anthropic",
       "proposerAccountId": "123456789012",
+      "issuerName": "AWS/Marketplace",
+      "productSkus": ["prod-example"],
       "autoActivateGrant": true
     }
   ],
@@ -137,6 +139,8 @@ Auto-discovers your Organization ID, lists existing licenses, and generates conf
   }
 }
 ```
+
+`productSkus` and `productNames` are optional filters used by `scripts/backfill_grants.py` to avoid broad issuer-only matches when processing existing licenses.
 
 ### Notifications
 
@@ -239,6 +243,24 @@ This automation activates grants automatically via `CreateGrantVersion(Status=AC
 When creating the grant, the automation derives `AllowedOperations` from the parent License Manager grant when License Manager exposes that metadata. If the parent grant cannot be read, it falls back to the default Bedrock Marketplace operation set.
 
 License Manager can take hours or days to move a newly created grant through workflow states before it becomes activatable. If the first Lambda invocation sees the grant still processing, it records the grant in `mppo-pending-grants`. A scheduled retry rule (`mppo-grant-activation-retry`, every 6 hours) keeps checking the grant and activates it once License Manager reports `DISABLED`.
+
+### Backfill Existing Licenses
+
+EventBridge automation handles new Marketplace agreement events. For licenses accepted before you deployed this sample, run a dry-run backfill:
+
+```bash
+python3 scripts/backfill_grants.py --config config/sellers.json
+```
+
+Backfill is allow-list scoped and dry-run by default. Because License Manager received licenses do not reliably expose the Marketplace proposer account ID, the script refuses broad issuer-only matching. Narrow the run by passing explicit `--license-arn` values, or add `productSkus` or `productNames` to the relevant seller config.
+
+```bash
+python3 scripts/backfill_grants.py \
+  --config config/sellers.json \
+  --license-arn arn:aws:license-manager::123456789012:license:l-example \
+  --apply \
+  --confirm-account-id 123456789012
+```
 
 ### Legacy Offer Cleanup
 
