@@ -4,9 +4,16 @@ import os
 import sys
 from unittest.mock import patch
 
+from botocore.exceptions import ClientError
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lambda"))
 
-from steps.create_grant import _activate_grant
+from steps.create_grant import (
+    DEFAULT_ALLOWED_OPERATIONS,
+    _activate_grant,
+    _create_single_grant,
+    _resolve_allowed_operations,
+)
 
 
 class FakeLicenseManager:
@@ -34,6 +41,55 @@ class FakeLicenseManager:
     def create_grant_version(self, **kwargs):
         self.create_grant_version_calls.append(kwargs)
         return self.activation_response
+
+
+class FakeOperationsClient:
+    """Fake License Manager client for allowed operation derivation."""
+
+    def __init__(self, licenses=None, parent_grant=None):
+        self.licenses = licenses or []
+        self.parent_grant = parent_grant or {}
+
+    def list_received_licenses(self, **kwargs):
+        return {"Licenses": self.licenses}
+
+    def get_grant(self, GrantArn):
+        return {"Grant": self.parent_grant}
+
+
+class FakeCreateGrantClient:
+    """Fake License Manager client for create-grant idempotency tests."""
+
+    def __init__(self):
+        self.create_grant_calls = []
+        self.list_distributed_grants_calls = []
+
+    def create_grant(self, **kwargs):
+        self.create_grant_calls.append(kwargs)
+        raise ClientError(
+            {
+                "Error": {
+                    "Code": "ConflictException",
+                    "Message": "License already has a grant for this principal",
+                }
+            },
+            "CreateGrant",
+        )
+
+    def list_distributed_grants(self, **kwargs):
+        self.list_distributed_grants_calls.append(kwargs)
+        return {
+            "Grants": [
+                {
+                    "GrantArn": "arn:aws:license-manager::111122223333:grant:g-existing"
+                }
+            ]
+        }
+
+
+class FakeStsClient:
+    def get_caller_identity(self):
+        return {"Account": "111122223333"}
 
 
 def test_activate_grant_waits_for_disabled_then_workflow_completed():
@@ -110,3 +166,96 @@ def test_activate_grant_times_out_without_disabled_state():
 
     assert result == "ACTIVATION_PENDING"
     assert client.create_grant_version_calls == []
+
+
+def test_resolve_allowed_operations_derives_from_parent_grant():
+    """Grant operations follow the parent grant when License Manager exposes it."""
+    client = FakeOperationsClient(
+        licenses=[
+            {
+                "LicenseArn": "arn:aws:license-manager::111122223333:license:l-test",
+                "LicenseMetadata": [
+                    {
+                        "Name": "grantArn",
+                        "Value": "arn:aws:license-manager::111122223333:grant:g-parent",
+                    }
+                ],
+            }
+        ],
+        parent_grant={
+            "AllowedOperations": [
+                "CreateGrant",
+                "CheckoutLicense",
+                "CheckoutLicense",
+                "CreateToken",
+            ]
+        },
+    )
+
+    operations = _resolve_allowed_operations(
+        client,
+        "arn:aws:license-manager::111122223333:license:l-test",
+    )
+
+    assert operations == ["CheckoutLicense", "CreateToken"]
+
+
+def test_resolve_allowed_operations_falls_back_to_defaults():
+    """Missing parent grant metadata keeps the current Bedrock defaults."""
+    client = FakeOperationsClient(licenses=[])
+
+    operations = _resolve_allowed_operations(
+        client,
+        "arn:aws:license-manager::111122223333:license:l-test",
+    )
+
+    assert operations == DEFAULT_ALLOWED_OPERATIONS
+
+
+def test_resolve_allowed_operations_honors_explicit_override():
+    """Explicit operations are normalised and do not call License Manager."""
+    client = FakeOperationsClient(licenses=[])
+
+    operations = _resolve_allowed_operations(
+        client,
+        "arn:aws:license-manager::111122223333:license:l-test",
+        allowed_operations=["CreateGrant", "CheckoutLicense", "CheckoutLicense"],
+    )
+
+    assert operations == ["CheckoutLicense"]
+
+
+def test_create_single_grant_reuses_exact_existing_duplicate_grant():
+    """Duplicate grant errors become idempotent only after exact grant lookup."""
+    lm_client = FakeCreateGrantClient()
+
+    def fake_boto3_client(service_name, region_name=None):
+        if service_name == "license-manager":
+            return lm_client
+        if service_name == "sts":
+            return FakeStsClient()
+        raise AssertionError(f"Unexpected client: {service_name}")
+
+    with patch("steps.create_grant.boto3.client", side_effect=fake_boto3_client):
+        result = _create_single_grant(
+            license_arn="arn:aws:license-manager::111122223333:license:l-test",
+            target={"type": "organization", "id": "o-exampleorg"},
+            seller_name="ISV Partner",
+            product_name="Model",
+            auto_activate=False,
+            allowed_operations=["CheckoutLicense"],
+        )
+
+    assert result["grant_arn"] == "arn:aws:license-manager::111122223333:grant:g-existing"
+    assert result["status"] == "EXISTING"
+    assert lm_client.create_grant_calls[0]["AllowedOperations"] == ["CheckoutLicense"]
+    assert lm_client.list_distributed_grants_calls[0]["Filters"] == [
+        {
+            "Name": "LicenseArn",
+            "Values": ["arn:aws:license-manager::111122223333:license:l-test"],
+        },
+        {
+            "Name": "GranteePrincipalARN",
+            "Values": ["arn:aws:organizations::111122223333:organization/o-exampleorg"],
+        },
+    ]
