@@ -9,6 +9,7 @@ Utility scripts for deployment, testing, and discount verification.
 | `setup_config.py` | Management account | **Start here** — interactive setup that auto-discovers org ID and licenses |
 | `bootstrap_prereqs.py` | Management account | Check and optionally enable License Manager and Marketplace organization prerequisites |
 | `seed_sellers.py` | Management account | Populate DynamoDB with allowed sellers after `cdk deploy` |
+| `backfill_grants.py` | Management account | Backfill grants for existing received licenses using the allow-list |
 | `simulate_event.py` | Management account | Generate test events and invoke the handler locally or deployed Lambda |
 | `e2e_validate.py` | Management account | Validate all infrastructure components are correctly deployed |
 | `create_grant_manual.py` | Management account | Create grants for existing subscriptions (backfill) |
@@ -40,6 +41,16 @@ python3 scripts/bootstrap_prereqs.py \
 
 # After cdk deploy — seed the seller allow-list
 python3 scripts/seed_sellers.py --config config/sellers.json
+
+# Dry-run existing received licenses before creating backfill grants
+python3 scripts/backfill_grants.py --config config/sellers.json
+
+# Apply a specific existing license after reviewing the dry-run
+python3 scripts/backfill_grants.py \
+    --config config/sellers.json \
+    --license-arn arn:aws:license-manager::123456789012:license:l-example \
+    --apply \
+    --confirm-account-id 123456789012
 
 # Validate all infra components
 python3 scripts/e2e_validate.py --org-id o-xxxxxxxxxx --seller-account 444455556666
