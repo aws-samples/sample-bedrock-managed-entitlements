@@ -110,6 +110,63 @@ def extract_sellers(licenses: list) -> dict:
     return sellers
 
 
+def build_seller_entry(
+    name: str,
+    proposer_id: str,
+    auto_accept: bool = False,
+    seller_profile_id: str | None = None,
+) -> dict:
+    """Build a config/sellers.json entry for one seller.
+
+    Mirrors the fields seed_sellers.py writes to DynamoDB. Auto-accept
+    requires sellerProfileId -- offers are authorized on that AWS-assigned
+    ID, never on the seller's display name (see auto_accept_handler.py and
+    the README's "How offers are authorized" section). A seller with
+    autoAcceptOffers but no sellerProfileId is written as-is; the Lambda
+    and seed_sellers.py both fail closed on it and report why via SNS,
+    rather than silently matching nothing the way the pre-fix handler did.
+    """
+    entry = {
+        "name": name,
+        "proposerAccountId": proposer_id,
+        "autoActivateGrant": True,
+        "replaceLegacyGrants": False,
+    }
+    if auto_accept:
+        entry["autoAcceptOffers"] = True
+        if seller_profile_id:
+            entry["sellerProfileId"] = seller_profile_id
+    return entry
+
+
+def _configure_seller_entry(name: str, proposer_id: str) -> dict:
+    """Interactively build one seller entry, prompting for auto-accept opt-in.
+
+    Thin wrapper around build_seller_entry() that owns the interactive
+    prompts, so build_seller_entry() itself stays a plain, testable function.
+    """
+    wants_auto_accept = prompt_yes_no(
+        f"    Enable auto-accept for {name}'s private offers?", default=False,
+    )
+    if not wants_auto_accept:
+        return build_seller_entry(name, proposer_id)
+
+    print("    ℹ️  Auto-accept authorizes on the seller's profile ID, never on")
+    print("       their display name (spoofable). Find it on the private offer")
+    print("       in the AWS Marketplace console.")
+    seller_profile_id = input("    Seller profile ID (required for auto-accept): ").strip()
+
+    if not seller_profile_id:
+        print(
+            f"    ⚠️  No sellerProfileId provided -- {name}'s offers will NOT be "
+            "auto-accepted until one is added to config and seed_sellers.py is re-run."
+        )
+
+    return build_seller_entry(
+        name, proposer_id, auto_accept=True, seller_profile_id=seller_profile_id or None,
+    )
+
+
 def prompt_yes_no(question: str, default: bool = True) -> bool:
     """Prompt for yes/no."""
     suffix = " [Y/n]: " if default else " [y/N]: "
@@ -233,12 +290,7 @@ def main():
                 proposer_id = input(f"    Seller AWS account ID: ").strip()
 
             if proposer_id:
-                allowed_sellers.append({
-                    "name": name,
-                    "proposerAccountId": proposer_id,
-                    "autoActivateGrant": True,
-                    "replaceLegacyGrants": False,
-                })
+                allowed_sellers.append(_configure_seller_entry(name, proposer_id))
             else:
                 print(f"    ⚠️  Skipping {name} (no account ID provided)")
 
@@ -252,12 +304,7 @@ def main():
             if not proposer_id:
                 print("    Skipped (no account ID)")
                 continue
-            allowed_sellers.append({
-                "name": name,
-                "proposerAccountId": proposer_id,
-                "autoActivateGrant": True,
-                "replaceLegacyGrants": False,
-            })
+            allowed_sellers.append(_configure_seller_entry(name, proposer_id))
             if not prompt_yes_no("    Add another?", default=False):
                 break
 
