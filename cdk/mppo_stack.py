@@ -287,6 +287,9 @@ class MppoGrantsAutomationStack(Stack):
                     actions=[
                         "aws-marketplace:CreateAgreementRequest",
                         "aws-marketplace:AcceptAgreementRequest",
+                        # Used to reconcile the accepted agreement's proposer
+                        # account against the seller allow-list.
+                        "aws-marketplace:DescribeAgreement",
                     ],
                     resources=["*"],
                 )

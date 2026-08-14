@@ -285,6 +285,7 @@ def test_auto_accept_lambda_deployed_when_enabled():
                         "Action": [
                             "aws-marketplace:CreateAgreementRequest",
                             "aws-marketplace:AcceptAgreementRequest",
+                            "aws-marketplace:DescribeAgreement",
                         ],
                     })
                 ])

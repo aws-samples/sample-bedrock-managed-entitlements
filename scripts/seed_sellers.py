@@ -64,6 +64,16 @@ def main():
         }
         if "grantTargets" in seller:
             item["grantTargets"] = seller["grantTargets"]
+        # Required for auto-accept: offers are authorized on this ID, never on
+        # the seller's display name. Omitted sellers simply never auto-accept.
+        if seller.get("sellerProfileId"):
+            item["sellerProfileId"] = seller["sellerProfileId"]
+        elif seller.get("autoAcceptOffers"):
+            print(
+                "  ! " + seller.get("name", seller["proposerAccountId"])
+                + " has autoAcceptOffers but no sellerProfileId -- its offers "
+                "will not be auto-accepted"
+            )
 
         if args.dry_run:
             print(f"  [DRY RUN] Would write: {json.dumps(item)}")

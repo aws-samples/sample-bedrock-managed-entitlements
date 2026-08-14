@@ -5,6 +5,7 @@
     {
       "name": "Anthropic",
       "proposerAccountId": "REPLACE_WITH_SELLER_ACCOUNT_ID",
+      "sellerProfileId": "REPLACE_WITH_SELLER_PROFILE_ID",
       "issuerName": "REPLACE_WITH_LICENSE_ISSUER_NAME",
       "autoActivateGrant": true,
       "autoAcceptOffers": false,
