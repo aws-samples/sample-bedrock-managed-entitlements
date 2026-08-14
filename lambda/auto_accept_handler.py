@@ -133,7 +133,9 @@ def lambda_handler(event: dict, context) -> dict:
     logger.info(
         "Checking private offers for %d auto-accept seller(s): %s",
         len(trusted_by_profile),
-        ", ".join(s.get("name", s["proposerAccountId"]) for s in trusted_by_profile.values()),
+        ", ".join(
+            s.get("name") or "unnamed seller" for s in trusted_by_profile.values()
+        ),
     )
 
     accepted = []
