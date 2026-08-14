@@ -3,13 +3,16 @@
 from botocore.exceptions import ClientError
 
 from scripts.bootstrap_prereqs import (
+    LICENSE_MANAGER_DELEGATED_ADMIN_PRINCIPAL,
     MARKETPLACE_LICENSE_MANAGEMENT_PRINCIPAL,
     CheckResult,
     apply_delegated_admin,
     apply_license_manager_settings,
+    apply_license_manager_trusted_access,
     apply_marketplace_trusted_access,
     check_delegated_admin,
     check_license_manager_settings,
+    check_license_manager_trusted_access,
     check_marketplace_trusted_access,
     check_organization,
     check_service_linked_roles,
@@ -148,6 +151,46 @@ def test_marketplace_trusted_access_can_be_applied():
     assert before.status == "APPLY"
     assert orgs.enabled_principal == MARKETPLACE_LICENSE_MANAGEMENT_PRINCIPAL
     assert after.status == "OK"
+
+
+def test_license_manager_trusted_access_can_be_applied():
+    """License Manager's own trusted access is a separate prerequisite from
+    Marketplace trusted access -- both must be enabled before CreateGrant can
+    distribute an org-wide grant. Missing this one produces a real API error
+    ("Grantor has disabled Trusted Access to AWS License Manager Service in
+    AWS Organizations") even when every other check passes.
+    """
+    orgs = FakeOrganizations(service_principals=[])
+
+    before = check_license_manager_trusted_access(orgs)
+    after = apply_license_manager_trusted_access(orgs)
+
+    assert before.status == "APPLY"
+    assert before.blocker is True
+    assert orgs.enabled_principal == LICENSE_MANAGER_DELEGATED_ADMIN_PRINCIPAL
+    assert after.status == "OK"
+
+
+def test_license_manager_trusted_access_ok_when_already_enabled():
+    orgs = FakeOrganizations(service_principals=[LICENSE_MANAGER_DELEGATED_ADMIN_PRINCIPAL])
+
+    result = check_license_manager_trusted_access(orgs)
+
+    assert result.status == "OK"
+    assert result.blocker is False
+
+
+def test_license_manager_trusted_access_is_independent_of_marketplace_trusted_access():
+    """Enabling only the Marketplace principal must not satisfy the License
+    Manager trusted-access check -- they are two distinct prerequisites."""
+    orgs = FakeOrganizations(service_principals=[MARKETPLACE_LICENSE_MANAGEMENT_PRINCIPAL])
+
+    marketplace_result = check_marketplace_trusted_access(orgs)
+    lm_result = check_license_manager_trusted_access(orgs)
+
+    assert marketplace_result.status == "OK"
+    assert lm_result.status == "APPLY"
+    assert lm_result.blocker is True
 
 
 def test_service_linked_role_check_warns_for_missing_roles():
