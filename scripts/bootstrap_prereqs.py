@@ -187,6 +187,70 @@ def apply_marketplace_trusted_access(orgs_client) -> CheckResult:
     return check_marketplace_trusted_access(orgs_client)
 
 
+def check_license_manager_trusted_access(orgs_client) -> CheckResult:
+    """Check whether AWS License Manager itself has trusted access.
+
+    This is a separate prerequisite from Marketplace trusted access
+    (MARKETPLACE_LICENSE_MANAGEMENT_PRINCIPAL) and from delegated admin
+    registration. License Manager's own service principal must have trusted
+    access enabled in AWS Organizations before license-manager:CreateGrant can
+    distribute a grant to an organization or OU target -- without it,
+    CreateGrant fails with "Grantor has disabled Trusted Access to AWS License
+    Manager Service in AWS Organizations", even when every other prerequisite
+    (all-features mode, License Manager org integration, Marketplace trusted
+    access, service-linked roles) is already satisfied. This check exists
+    specifically to catch that gap before a real grant creation call hits it.
+    """
+    try:
+        principals = _paginate(
+            orgs_client,
+            "list_aws_service_access_for_organization",
+            "EnabledServicePrincipals",
+        )
+        enabled = any(
+            principal.get("ServicePrincipal") == LICENSE_MANAGER_DELEGATED_ADMIN_PRINCIPAL
+            for principal in principals
+        )
+    except ClientError as error:
+        if _client_error_code(error) == "AWSOrganizationsNotInUseException":
+            return CheckResult(
+                "License Manager trusted access",
+                "FAIL",
+                "AWS Organizations is not enabled for this account.",
+                blocker=True,
+            )
+        return CheckResult("License Manager trusted access", "FAIL", str(error), blocker=True)
+
+    if enabled:
+        return CheckResult(
+            "License Manager trusted access",
+            "OK",
+            f"{LICENSE_MANAGER_DELEGATED_ADMIN_PRINCIPAL} is enabled.",
+        )
+
+    return CheckResult(
+        "License Manager trusted access",
+        "APPLY",
+        f"{LICENSE_MANAGER_DELEGATED_ADMIN_PRINCIPAL} is not enabled. Run with "
+        "--apply --confirm-account-id <current-account-id> to enable it. Without this, "
+        "CreateGrant fails with 'Grantor has disabled Trusted Access to AWS License "
+        "Manager Service in AWS Organizations' even if every other check passes.",
+        blocker=True,
+    )
+
+
+def apply_license_manager_trusted_access(orgs_client) -> CheckResult:
+    """Enable AWS License Manager's own trusted access."""
+    try:
+        orgs_client.enable_aws_service_access(
+            ServicePrincipal=LICENSE_MANAGER_DELEGATED_ADMIN_PRINCIPAL
+        )
+    except ClientError as error:
+        return CheckResult("License Manager trusted access", "FAIL", str(error), blocker=True)
+
+    return check_license_manager_trusted_access(orgs_client)
+
+
 def check_service_linked_roles(iam_client) -> CheckResult:
     """Check service-linked roles created by License Manager and Marketplace."""
     role_names = [
@@ -422,6 +486,12 @@ def main() -> int:
         trusted_result = apply_marketplace_trusted_access(orgs)
     results.append(trusted_result)
     print_result(trusted_result)
+
+    lm_trusted_result = check_license_manager_trusted_access(orgs)
+    if can_apply_org_prereqs and lm_trusted_result.status == "APPLY":
+        lm_trusted_result = apply_license_manager_trusted_access(orgs)
+    results.append(lm_trusted_result)
+    print_result(lm_trusted_result)
 
     roles_result = check_service_linked_roles(iam)
     results.append(roles_result)
