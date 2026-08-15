@@ -9,6 +9,7 @@ This function implements retry with exponential backoff.
 
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Optional
 
 import boto3
@@ -61,7 +62,7 @@ def discover_license(
                     continue
 
                 lic_issuer_name = lic.get("Issuer", {}).get("Name", "")
-                create_time = lic.get("CreateTime", "")
+                raw_create_time = lic.get("CreateTime", "")
 
                 # Require an exact issuer match and a license created no
                 # earlier than the agreement's acceptance — this is what
@@ -69,7 +70,14 @@ def discover_license(
                 # since ProductSKU alone matches any license for the product.
                 if lic_issuer_name != issuer_name:
                     continue
-                if create_time and create_time < acceptance_time:
+
+                create_epoch = _to_epoch_seconds(raw_create_time)
+                acceptance_epoch = _to_epoch_seconds(acceptance_time)
+                if (
+                    create_epoch is not None
+                    and acceptance_epoch is not None
+                    and create_epoch < acceptance_epoch
+                ):
                     continue
 
                 matching.append({
@@ -77,7 +85,7 @@ def discover_license(
                     "product_name": lic.get("ProductName", ""),
                     "product_sku": lic.get("ProductSKU", ""),
                     "issuer_name": lic_issuer_name,
-                    "create_time": create_time,
+                    "create_time": raw_create_time,
                 })
 
             if len(matching) == 1:
@@ -116,6 +124,40 @@ def discover_license(
         max_retries, proposer_account_id, issuer_name,
     )
     return None
+
+
+def _to_epoch_seconds(value) -> Optional[float]:
+    """Normalize a CreateTime/acceptance_time value to Unix epoch seconds.
+
+    License Manager's `list_received_licenses` returns `CreateTime` as a
+    string of Unix epoch seconds (e.g. "1786405121"), while the EventBridge
+    agreement event's `acceptanceTime` is ISO8601 (e.g.
+    "2026-08-15T04:37:13Z"). Comparing those two strings directly is a plain
+    lexicographic comparison and is wrong: "1786405121" < "2026-08-15..." is
+    True for essentially any real timestamp, because "1" < "2", so the caller
+    must never compare the raw strings — always normalize both to numeric
+    epoch seconds first.
+
+    Returns None (rather than raising) for empty/unparseable input, and the
+    caller treats None as "unknown, cannot compare" — it does not exclude a
+    license just because a timestamp failed to parse.
+    """
+    if not value:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        logger.warning("Could not parse timestamp value: %r", value)
+        return None
 
 
 def _list_all_licenses(client) -> list:
