@@ -29,9 +29,11 @@ from botocore.exceptions import ClientError
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lambda"))
 
 from steps.create_grant import create_and_activate_grants  # noqa: E402
+from steps.pending_grants import SUCCESS_STATUSES, record_pending_grant  # noqa: E402
 
 
 IGNORED_LICENSE_STATES = {"EXPIRED", "DELETED"}
+DEFAULT_PENDING_GRANT_TABLE_NAME = "mppo-pending-grants"
 
 
 @dataclass(frozen=True)
@@ -200,23 +202,61 @@ def print_plan(plan: BackfillPlan, apply: bool) -> None:
             print(f"- {item}")
 
 
-def apply_plan(plan: BackfillPlan, region: str, organization_id: str) -> int:
+def apply_plan(
+    plan: BackfillPlan,
+    region: str,
+    organization_id: str,
+    pending_grant_table_name: str | None = None,
+) -> int:
+    """Apply the planned grants, recording any that don't activate immediately.
+
+    Grants that don't reach ACTIVE/WORKFLOW_COMPLETED on the first attempt are
+    recorded in the pending-grants table, the same way handler.py's
+    EventBridge-triggered path does. Without this, a backfilled grant that
+    lands in DISABLED/PENDING_WORKFLOW has no automatic path to activation --
+    the scheduled mppo-grant-activation-retry rule only retries grants it
+    knows about, and this script previously never told it about any.
+    """
+    table_name = pending_grant_table_name or os.environ.get(
+        "PENDING_GRANT_TABLE_NAME", DEFAULT_PENDING_GRANT_TABLE_NAME
+    )
     failures = 0
     for item in plan.items:
         seller = item.seller
         license_record = item.license_record
+        seller_name = seller.get("name", seller.get("proposerAccountId", "seller"))
+        auto_activate = seller.get("autoActivateGrant", True)
         try:
-            result = create_and_activate_grants(
+            results = create_and_activate_grants(
                 license_arn=license_record["LicenseArn"],
                 grant_targets=item.grant_targets,
-                seller_name=seller.get("name", seller.get("proposerAccountId", "seller")),
+                seller_name=seller_name,
                 product_name=license_record.get("ProductName", "Unknown"),
                 organization_id=organization_id,
                 home_region=region,
-                auto_activate=seller.get("autoActivateGrant", True),
+                auto_activate=auto_activate,
                 replace_legacy_grants=seller.get("replaceLegacyGrants", False),
             )
-            print(f"Applied {license_record['LicenseArn']}: {json.dumps(result, default=str)}")
+            print(f"Applied {license_record['LicenseArn']}: {json.dumps(results, default=str)}")
+
+            if auto_activate:
+                for grant in results:
+                    if grant.get("status") not in SUCCESS_STATUSES:
+                        record_pending_grant(
+                            table_name=table_name,
+                            grant=grant,
+                            agreement_id="backfill",
+                            offer_id="backfill",
+                            seller_name=seller_name,
+                            product_name=license_record.get("ProductName", "Unknown"),
+                            license_arn=license_record["LicenseArn"],
+                            replace_legacy_grants=seller.get("replaceLegacyGrants", False),
+                        )
+                        print(
+                            f"  Recorded pending activation for {grant.get('grant_arn')} "
+                            f"(status: {grant.get('status')}) -- the scheduled retry rule "
+                            "will continue until it activates."
+                        )
         except Exception as error:
             failures += 1
             print(f"Failed {license_record.get('LicenseArn')}: {error}")
@@ -243,6 +283,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Limit backfill to an allowed seller account ID. Can be passed more than once.",
     )
     parser.add_argument("--apply", action="store_true", help="Apply the planned grants.")
+    parser.add_argument(
+        "--pending-grant-table-name",
+        default=None,
+        help=(
+            "DynamoDB table for tracking grants pending activation. Defaults to "
+            "the PENDING_GRANT_TABLE_NAME env var, or 'mppo-pending-grants'. Grants "
+            "that don't activate immediately are recorded here so the scheduled "
+            "mppo-grant-activation-retry rule can retry them, same as grants "
+            "created via the EventBridge-triggered handler path."
+        ),
+    )
     parser.add_argument(
         "--confirm-account-id",
         default=None,
@@ -284,7 +335,7 @@ def main() -> int:
     if validation:
         return validation
 
-    return apply_plan(plan, args.region, config["organizationId"])
+    return apply_plan(plan, args.region, config["organizationId"], args.pending_grant_table_name)
 
 
 if __name__ == "__main__":
