@@ -84,6 +84,21 @@ class TestToEpochSeconds:
     def test_unparseable_returns_none_not_raise(self):
         assert _to_epoch_seconds("not-a-timestamp") is None
 
+    def test_epoch_zero_is_valid_not_none(self):
+        # Epoch 0 (1970-01-01) is a falsy int/float but a genuinely valid
+        # timestamp -- must not be conflated with "empty/unparseable".
+        assert _to_epoch_seconds(0) == 0.0
+        assert _to_epoch_seconds(0.0) == 0.0
+        assert _to_epoch_seconds("0") == 0.0
+
+    def test_naive_iso8601_assumed_utc(self):
+        # A naive ISO8601 string (no Z/offset) must be treated as UTC, not
+        # the ambient system timezone -- otherwise the same input parses to
+        # a different epoch value depending on where the code runs.
+        naive = _to_epoch_seconds("2026-08-15T04:37:13")
+        aware = _to_epoch_seconds("2026-08-15T04:37:13Z")
+        assert naive == aware
+
 
 class TestDiscoverLicenseRealShapeRegression:
     """Exercises the real comparison path with monkeypatched boto3 client,
