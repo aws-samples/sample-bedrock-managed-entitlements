@@ -2,10 +2,17 @@
 
 import os
 import sys
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-from backfill_grants import build_backfill_plan, license_matches_seller
+from backfill_grants import (
+    BackfillPlan,
+    BackfillPlanItem,
+    apply_plan,
+    build_backfill_plan,
+    license_matches_seller,
+)
 
 
 def _config(seller):
@@ -132,3 +139,107 @@ def test_backfill_can_limit_to_seller_account():
 
     assert len(plan.items) == 1
     assert plan.items[0].seller["name"] == "B"
+
+
+def _plan_item(auto_activate=True):
+    return BackfillPlanItem(
+        seller={
+            "name": "ISV Partner",
+            "proposerAccountId": "123456789012",
+            "autoActivateGrant": auto_activate,
+            "replaceLegacyGrants": False,
+        },
+        license_record=_license(),
+        grant_targets=[{"type": "organization", "id": "o-exampleorg"}],
+    )
+
+
+@patch("backfill_grants.record_pending_grant")
+@patch("backfill_grants.create_and_activate_grants")
+def test_apply_plan_records_pending_grant_when_not_immediately_active(
+    mock_create, mock_record,
+):
+    """A grant that lands in DISABLED/PENDING_WORKFLOW after creation must be
+    recorded in the pending-grants table, the same way handler.py's
+    EventBridge-triggered path does -- otherwise the scheduled
+    mppo-grant-activation-retry rule never learns about it and it never
+    activates automatically.
+    """
+    mock_create.return_value = [{
+        "grant_arn": "arn:aws:license-manager::111122223333:grant:g-test",
+        "status": "DISABLED",
+        "target_type": "organization",
+        "target_id": "o-exampleorg",
+    }]
+
+    plan = BackfillPlan(items=[_plan_item()], skipped=[], blocked=[])
+    exit_code = apply_plan(plan, region="us-east-1", organization_id="o-exampleorg")
+
+    assert exit_code == 0
+    mock_record.assert_called_once()
+    _, kwargs = mock_record.call_args
+    assert kwargs["grant"]["grant_arn"] == "arn:aws:license-manager::111122223333:grant:g-test"
+    assert kwargs["license_arn"] == _license()["LicenseArn"]
+    assert kwargs["seller_name"] == "ISV Partner"
+
+
+@patch("backfill_grants.record_pending_grant")
+@patch("backfill_grants.create_and_activate_grants")
+def test_apply_plan_does_not_record_pending_grant_when_already_active(
+    mock_create, mock_record,
+):
+    """A grant that activates immediately (ACTIVE or WORKFLOW_COMPLETED) needs
+    no retry tracking."""
+    mock_create.return_value = [{
+        "grant_arn": "arn:aws:license-manager::111122223333:grant:g-test",
+        "status": "WORKFLOW_COMPLETED",
+        "target_type": "organization",
+        "target_id": "o-exampleorg",
+    }]
+
+    plan = BackfillPlan(items=[_plan_item()], skipped=[], blocked=[])
+    exit_code = apply_plan(plan, region="us-east-1", organization_id="o-exampleorg")
+
+    assert exit_code == 0
+    mock_record.assert_not_called()
+
+
+@patch("backfill_grants.record_pending_grant")
+@patch("backfill_grants.create_and_activate_grants")
+def test_apply_plan_does_not_record_pending_grant_when_auto_activate_disabled(
+    mock_create, mock_record,
+):
+    """A grant intentionally left DISABLED because autoActivateGrant is False
+    is not a retry candidate -- the operator chose not to activate it."""
+    mock_create.return_value = [{
+        "grant_arn": "arn:aws:license-manager::111122223333:grant:g-test",
+        "status": "DISABLED",
+        "target_type": "organization",
+        "target_id": "o-exampleorg",
+    }]
+
+    plan = BackfillPlan(items=[_plan_item(auto_activate=False)], skipped=[], blocked=[])
+    exit_code = apply_plan(plan, region="us-east-1", organization_id="o-exampleorg")
+
+    assert exit_code == 0
+    mock_record.assert_not_called()
+
+
+@patch("backfill_grants.record_pending_grant")
+@patch("backfill_grants.create_and_activate_grants")
+def test_apply_plan_uses_custom_pending_grant_table_name(mock_create, mock_record):
+    mock_create.return_value = [{
+        "grant_arn": "arn:aws:license-manager::111122223333:grant:g-test",
+        "status": "PENDING_WORKFLOW",
+        "target_type": "organization",
+        "target_id": "o-exampleorg",
+    }]
+
+    plan = BackfillPlan(items=[_plan_item()], skipped=[], blocked=[])
+    apply_plan(
+        plan, region="us-east-1", organization_id="o-exampleorg",
+        pending_grant_table_name="custom-pending-table",
+    )
+
+    _, kwargs = mock_record.call_args
+    assert kwargs["table_name"] == "custom-pending-table"
