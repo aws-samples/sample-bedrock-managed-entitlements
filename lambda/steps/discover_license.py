@@ -141,8 +141,23 @@ def _to_epoch_seconds(value) -> Optional[float]:
     Returns None (rather than raising) for empty/unparseable input, and the
     caller treats None as "unknown, cannot compare" — it does not exclude a
     license just because a timestamp failed to parse.
+
+    Epoch `0` (1970-01-01) is treated as a valid, parseable value rather than
+    "empty" — int/float `0` and string `"0"` both return `0.0`, not `None`.
+    License Manager will never actually return `CreateTime=0`, but this keeps
+    the numeric and string code paths consistent rather than silently
+    special-casing a falsy-but-valid number.
+
+    Naive ISO8601 input (no `Z`/offset) is assumed to be UTC rather than the
+    ambient system timezone — `datetime.fromisoformat(...).timestamp()`
+    would otherwise interpret a naive datetime using local system TZ, which
+    would silently produce the wrong epoch value on any host not already
+    running in UTC. In practice both real inputs to this function
+    (License Manager's `CreateTime` and EventBridge's `acceptanceTime`) are
+    always UTC, but this avoids a latent correctness trap if that ever
+    changes.
     """
-    if not value:
+    if value is None:
         return None
     if isinstance(value, (int, float)):
         return float(value)
@@ -154,7 +169,10 @@ def _to_epoch_seconds(value) -> Optional[float]:
     except ValueError:
         pass
     try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.timestamp()
     except ValueError:
         logger.warning("Could not parse timestamp value: %r", value)
         return None
