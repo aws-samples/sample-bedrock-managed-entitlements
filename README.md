@@ -246,7 +246,9 @@ License Manager can take hours or days to move a newly created grant through wor
 
 ### Backfill Existing Licenses
 
-EventBridge automation handles new Marketplace agreement events. For licenses accepted before you deployed this sample, run a dry-run backfill:
+EventBridge automation handles new Marketplace agreement events. For licenses accepted before you deployed this sample, you have two options depending on how much control you want:
+
+**Allow-list scoped (recommended default):** reuses your `config/sellers.json` allow-list, so only licenses from sellers you've already vetted are touched.
 
 ```bash
 python3 scripts/backfill_grants.py --config config/sellers.json
@@ -261,6 +263,18 @@ python3 scripts/backfill_grants.py \
   --apply \
   --confirm-account-id 123456789012
 ```
+
+**Lightweight, no config file:** if you don't want to maintain `config/sellers.json` at all — e.g. a one-off bootstrap where you're comfortable distributing *every* received license — use `scripts/distribute_licenses.py` instead. It has no allow-list (that's what makes it lightweight), but keeps the same dry-run-by-default / `--apply --confirm-account-id` review gate:
+
+```bash
+# Review the plan first (no API calls that create or modify grants)
+python3 scripts/distribute_licenses.py
+
+# Apply after reviewing
+python3 scripts/distribute_licenses.py --apply --confirm-account-id 123456789012
+```
+
+See [`scripts/README.md`](scripts/README.md#lightweight-alternative-distribute_licensespy) for the full comparison against `backfill_grants.py` and the CDK automation.
 
 ### Legacy Offer Cleanup
 
