@@ -4,7 +4,7 @@ Organization and activate each resulting grant -- with a review step first.
 
 Lightweight alternative to the CDK stack: no config file, no DynamoDB, no
 Lambda. Just this script and ambient AWS credentials in the management
-account. See scripts/README.md for when to use this vs. backfill_grants.py
+account. See lightweight/README.md for when to use this vs. backfill_grants.py
 (the allow-list-scoped equivalent) or the full CDK automation.
 
 Default mode is dry-run: it lists every received license and shows exactly
@@ -13,11 +13,10 @@ Nothing is created until you re-run with --apply --confirm-account-id
 <account-id>, which must match the account you're actually running in.
 
 Usage:
-    # Review what would happen (no changes made)
-    python3 scripts/distribute_licenses.py
+    python3 lightweight/distribute_licenses.py
 
-    # Apply after reviewing the plan
-    python3 scripts/distribute_licenses.py --apply --confirm-account-id 123456789012
+    # Apply after reviewing
+    python3 lightweight/distribute_licenses.py --apply --confirm-account-id 123456789012
 
 Unlike backfill_grants.py, this script has no allow-list: it will plan (and,
 with --apply, distribute+activate) a grant for every received license that

@@ -2,6 +2,8 @@
 
 Utility scripts for deployment, testing, and discount verification.
 
+> Looking for the lightweight, no-config-file path? See [`../lightweight/`](../lightweight/) instead — it's a standalone script and doesn't use anything in this folder.
+
 ## Overview
 
 | Script | Run From | Purpose |
@@ -10,60 +12,10 @@ Utility scripts for deployment, testing, and discount verification.
 | `bootstrap_prereqs.py` | Management account | Check and optionally enable License Manager and Marketplace organization prerequisites |
 | `seed_sellers.py` | Management account | Populate DynamoDB with allowed sellers after `cdk deploy` |
 | `backfill_grants.py` | Management account | Backfill grants for existing received licenses, scoped to the allow-list |
-| `distribute_licenses.py` | Management account | **Lightweight alternative** — backfill every received license (no allow-list, no config file); same dry-run/`--apply` review gate |
 | `simulate_event.py` | Management account | Generate test events and invoke the handler locally or deployed Lambda |
 | `e2e_validate.py` | Management account | Validate all infrastructure components are correctly deployed |
 | `create_grant_manual.py` | Management account | Create grants for existing subscriptions (backfill) |
 | `bedrock_discount_check.py` | Member account OR management account | Verify negotiated pricing is actually flowing |
-
-## Lightweight Alternative: `distribute_licenses.py`
-
-`backfill_grants.py` is allow-list scoped: it only touches licenses matching sellers already in `config/sellers.json`, and refuses broad issuer-only matches. That's the right default, but it means you have to maintain a config file even for a one-off bootstrap.
-
-`distribute_licenses.py` is the lightweight equivalent for when you don't want that config file at all — for example, right after deploying, when you already trust every license currently sitting in `ListReceivedLicenses` and just want them all distributed and activated in one pass. It has **no allow-list**: every non-expired received license is in scope. To offset that, it keeps the same review gate as `backfill_grants.py`:
-
-```bash
-# 1. Dry-run: lists what would be distributed and activated. No mutating API calls.
-python3 scripts/distribute_licenses.py
-
-# 2. Review the printed plan, then apply:
-python3 scripts/distribute_licenses.py --apply --confirm-account-id 123456789012
-```
-
-`--confirm-account-id` must match the AWS account you're actually running in (same pattern `backfill_grants.py` and `bootstrap_prereqs.py` use) — this is a guard against accidentally running an org-wide grant operation against the wrong account.
-
-What it does on `--apply`:
-
-1. Lists every received License Manager license (`ListReceivedLicenses`), skipping `EXPIRED`/`DELETED`.
-2. Discovers your organization ARN (`DescribeOrganization`) and uses it as the grant principal.
-3. Creates an org-wide grant for each license (`CreateGrant`) — re-runs are idempotent; an already-distributed license reuses its existing grant instead of erroring.
-4. Polls the grant until distribution finishes (`GetGrant` → `WORKFLOW_COMPLETED`).
-5. Activates the grant (`CreateGrantVersion(Status=ACTIVE)`), fixing the same Disabled→Active gotcha the CDK automation and `backfill_grants.py` handle.
-
-**Choosing between the three:**
-
-| | `distribute_licenses.py` | `backfill_grants.py` | CDK automation |
-|---|---|---|---|
-| Config file required | No | Yes (`config/sellers.json`) | Yes |
-| Allow-list scoped | No — every received license | Yes | Yes |
-| Handles new offers going forward | No — one-shot, re-run manually | No — one-shot, re-run manually | Yes, automatically |
-| Infra deployed | None | None | EventBridge + Lambda + DynamoDB |
-| Review step before mutating | Dry-run by default, `--apply` required | Dry-run by default, `--apply` required | N/A (automatic) |
-| Best for | Fastest path when you trust everything currently received | One-off backfill scoped to sellers you've already vetted | Ongoing, hands-off automation |
-
-**Must run from the management account** (same requirement as the other two — only the management account can create org-wide grants).
-
-**IAM requirements (no infra to provision — grant management + org lookup only):**
-
-```yaml
-- license-manager:ListReceivedLicenses
-- license-manager:ListDistributedGrants
-- license-manager:CreateGrant
-- license-manager:CreateGrantVersion
-- license-manager:GetGrant
-- organizations:DescribeOrganization
-- sts:GetCallerIdentity
-```
 
 ## Where to Run Each Script
 
