@@ -2,6 +2,8 @@
 
 Utility scripts for deployment, testing, and discount verification.
 
+> Looking for the lightweight, no-config-file path? See [`../lightweight/`](../lightweight/) instead — it's a standalone script and doesn't use anything in this folder.
+
 ## Overview
 
 | Script | Run From | Purpose |
@@ -9,7 +11,7 @@ Utility scripts for deployment, testing, and discount verification.
 | `setup_config.py` | Management account | **Start here** — interactive setup that auto-discovers org ID and licenses |
 | `bootstrap_prereqs.py` | Management account | Check and optionally enable License Manager and Marketplace organization prerequisites |
 | `seed_sellers.py` | Management account | Populate DynamoDB with allowed sellers after `cdk deploy` |
-| `backfill_grants.py` | Management account | Backfill grants for existing received licenses using the allow-list |
+| `backfill_grants.py` | Management account | Backfill grants for existing received licenses, scoped to the allow-list |
 | `simulate_event.py` | Management account | Generate test events and invoke the handler locally or deployed Lambda |
 | `e2e_validate.py` | Management account | Validate all infrastructure components are correctly deployed |
 | `create_grant_manual.py` | Management account | Create grants for existing subscriptions (backfill) |

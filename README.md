@@ -34,6 +34,24 @@ This sample automates the grant distribution step so you never have to manually 
 
 ---
 
+## Choose Your Path
+
+This repo has **two independent ways** to fix the Disabled→Active grant problem. Pick one:
+
+| | [`lightweight/`](lightweight/) | This repo's CDK automation (below) |
+|---|---|---|
+| **What it is** | One script, run once | EventBridge + Lambda + DynamoDB, deployed via CDK |
+| **Setup** | None — clone and run | `cdk deploy` + config file |
+| **Scope** | Every received license (no allow-list) | Only sellers in your allow-list |
+| **Reacts to new offers automatically?** | No — re-run manually | Yes |
+| **Choose this if…** | You want the fastest fix, no infra, and trust everything currently in `ListReceivedLicenses` | You want ongoing, hands-off automation with per-seller control |
+
+→ **Want the lightweight script?** Go straight to [`lightweight/README.md`](lightweight/README.md) — nothing else in this repo is required.
+
+→ **Want the full automation?** Keep reading below.
+
+---
+
 ## Getting Started
 
 ### Prerequisites
@@ -246,7 +264,9 @@ License Manager can take hours or days to move a newly created grant through wor
 
 ### Backfill Existing Licenses
 
-EventBridge automation handles new Marketplace agreement events. For licenses accepted before you deployed this sample, run a dry-run backfill:
+EventBridge automation handles new Marketplace agreement events. For licenses accepted before you deployed this sample, you have two options depending on how much control you want:
+
+**Allow-list scoped (recommended default):** reuses your `config/sellers.json` allow-list, so only licenses from sellers you've already vetted are touched.
 
 ```bash
 python3 scripts/backfill_grants.py --config config/sellers.json
@@ -261,6 +281,8 @@ python3 scripts/backfill_grants.py \
   --apply \
   --confirm-account-id 123456789012
 ```
+
+**Lightweight, no config file:** if you don't want to maintain `config/sellers.json` at all — e.g. a one-off bootstrap where you're comfortable distributing *every* received license — use the standalone script in [`lightweight/`](lightweight/) instead of anything in this section. See [Choose Your Path](#choose-your-path) above and [`lightweight/README.md`](lightweight/README.md) for full usage; it doesn't require anything else in this repo.
 
 ### Legacy Offer Cleanup
 
