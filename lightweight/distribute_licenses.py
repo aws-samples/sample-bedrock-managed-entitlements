@@ -222,7 +222,7 @@ def wait_for_workflow(lm, grant_arn, what):
 
 def activate_grant(lm, grant):
     """Returns True if an activation was issued, False if already ACTIVE."""
-    if grant.get("GrantStatus") == "ACTIVE" or grant.get("GrantStatus") == "WORKFLOW_COMPLETED":
+    if grant.get("GrantStatus") == "ACTIVE":
         log("   ℹ️ grant already ACTIVE; nothing to do")
         return False
     log("   🚀 activating grant...")
