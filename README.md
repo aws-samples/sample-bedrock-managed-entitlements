@@ -390,8 +390,9 @@ authorization error. Check AWS CloudTrail for `AccessDenied` events from
 operator's policy and retry activation.
 
 These permissions apply to a person manually accepting and activating a received
-grant. They are separate from the Lambda execution-role permissions listed
-below, which create and activate organization-wide grants through the API.
+grant. The sample also includes them in the Lambda execution role so the deployed
+License Manager policy covers both grant management paths. A console operator
+still needs the permissions attached to their own IAM principal.
 
 ---
 
@@ -418,6 +419,9 @@ This sample deploys infrastructure into **your** AWS account. Under the [AWS Sha
 ```yaml
 # Grant distribution Lambda
 - license-manager:ListReceivedLicenses
+- license-manager:AcceptGrant
+- license-manager:GetLicense
+- license-manager:GetLicenseUsage
 - license-manager:CreateGrant
 - license-manager:CreateGrantVersion
 - license-manager:GetGrant

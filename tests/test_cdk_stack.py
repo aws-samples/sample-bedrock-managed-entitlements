@@ -183,6 +183,9 @@ def test_lambda_has_license_manager_permissions():
                     Match.object_like({
                         "Action": [
                             "license-manager:ListReceivedLicenses",
+                            "license-manager:AcceptGrant",
+                            "license-manager:GetLicense",
+                            "license-manager:GetLicenseUsage",
                             "license-manager:CreateGrant",
                             "license-manager:CreateGrantVersion",
                             "license-manager:GetGrant",
