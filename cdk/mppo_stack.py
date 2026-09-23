@@ -151,6 +151,9 @@ class MppoGrantsAutomationStack(Stack):
                 effect=iam.Effect.ALLOW,
                 actions=[
                     "license-manager:ListReceivedLicenses",
+                    "license-manager:AcceptGrant",
+                    "license-manager:GetLicense",
+                    "license-manager:GetLicenseUsage",
                     "license-manager:CreateGrant",
                     "license-manager:CreateGrantVersion",
                     "license-manager:GetGrant",

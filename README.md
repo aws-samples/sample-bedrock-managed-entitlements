@@ -372,6 +372,28 @@ python scripts/simulate_event.py --seller-account 123456789012 --live
 python scripts/e2e_validate.py --org-id o-xxxxxxxxxx --seller-account 444455556666 --simulate
 ```
 
+### Troubleshoot manual grant activation
+
+If selecting **Activate** in the License Manager console does not advance to the
+confirmation screen, verify that the operator's IAM policy allows these actions:
+
+```yaml
+- license-manager:AcceptGrant
+- license-manager:GetLicense
+- license-manager:GetLicenseUsage
+```
+
+`license-manager:List*` does not include the two `Get*` actions. Missing read
+permissions can make the console appear unresponsive instead of showing a clear
+authorization error. Check AWS CloudTrail for `AccessDenied` events from
+`GetLicense` or `GetLicenseUsage`, then add only the missing actions to the
+operator's policy and retry activation.
+
+These permissions apply to a person manually accepting and activating a received
+grant. The sample also includes them in the Lambda execution role so the deployed
+License Manager policy covers both grant management paths. A console operator
+still needs the permissions attached to their own IAM principal.
+
 ---
 
 ## Security
@@ -397,6 +419,9 @@ This sample deploys infrastructure into **your** AWS account. Under the [AWS Sha
 ```yaml
 # Grant distribution Lambda
 - license-manager:ListReceivedLicenses
+- license-manager:AcceptGrant
+- license-manager:GetLicense
+- license-manager:GetLicenseUsage
 - license-manager:CreateGrant
 - license-manager:CreateGrantVersion
 - license-manager:GetGrant
