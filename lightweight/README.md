@@ -30,6 +30,8 @@ python3 lightweight/distribute_licenses.py --apply --confirm-account-id 12345678
 4. Polls the grant until distribution finishes (`GetGrant` → `WORKFLOW_COMPLETED`).
 5. Activates the grant (`CreateGrantVersion(Status=ACTIVE)`), fixing the Disabled→Active gotcha.
 
+If License Manager reports that too many organization grant activities are already in progress, the script waits and retries the distribution or activation call before failing.
+
 ## Important: no allow-list
 
 Unlike everything else in this repo, `distribute_licenses.py` does **not** check received licenses against a seller allow-list. Every non-expired license currently in `ListReceivedLicenses` is in scope. That's what makes it lightweight — no `config/sellers.json` to create or maintain — but it also means the dry-run plan printed in step 1 is your only review step. Read it before passing `--apply`.
@@ -59,4 +61,5 @@ Read + grant-management only, no infrastructure to provision:
 | Handles new offers going forward | No — one-shot, re-run manually | No — one-shot, re-run manually | Yes, automatically |
 | Infra deployed | None | None | EventBridge + Lambda + DynamoDB |
 | Review step before mutating | Dry-run by default, `--apply` required | Dry-run by default, `--apply` required | N/A (automatic) |
+| Retries org grant activity cap | Yes | Uses the shared grant activation flow | Uses the shared grant activation flow |
 | Best for | Fastest path when you trust everything currently received | One-off backfill scoped to sellers you've already vetted | Ongoing, hands-off automation |
