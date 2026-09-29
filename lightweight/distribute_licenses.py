@@ -52,6 +52,12 @@ DUPLICATE_HINTS = ("already has a grant", "duplicate", "already exist",
 POLL_INTERVAL = 30
 TIMEOUT = 3600
 
+# create_grant/create_grant_version return a retriable error when License Manager's
+# cap on concurrent org grant activities is reached; with_org_retry waits and retries.
+ORG_ACTIVITY_IN_PROGRESS_HINT = "too many concurrent org grants"
+ORG_RETRY_MAX_WAIT = 1800
+ORG_RETRY_BACKOFF_CAP = 300
+
 
 def log(msg):
     print("%s %s" % (time.strftime("%H:%M:%S"), msg), flush=True)
@@ -70,11 +76,42 @@ def parent_grant_arn(lic):
     return None
 
 
+def license_name(lic):
+    """Human-readable name for logging: LicenseName, else ProductName, else '?'."""
+    return lic.get("LicenseName") or lic.get("ProductName") or "?"
+
+
 def is_duplicate_error(exc):
     code = exc.response.get("Error", {}).get("Code", "")
     message = exc.response.get("Error", {}).get("Message", "")
     blob = ("%s %s" % (code, message)).lower()
     return any(hint in blob for hint in DUPLICATE_HINTS)
+
+
+def is_org_activity_in_progress(exc):
+    """True when the call hit License Manager's cap on concurrent org grant activities."""
+    if not isinstance(exc, ClientError):
+        return False
+    err = exc.response.get("Error", {})
+    blob = ("%s %s" % (err.get("Code", ""), err.get("Message", ""))).lower()
+    return ORG_ACTIVITY_IN_PROGRESS_HINT in blob
+
+
+def with_org_retry(fn, what):
+    """Run fn(), retrying while the org grant activity cap is reached."""
+    delay = POLL_INTERVAL
+    waited = 0
+    while True:
+        try:
+            return fn()
+        except ClientError as exc:
+            if not (is_org_activity_in_progress(exc) and waited < ORG_RETRY_MAX_WAIT):
+                raise
+            log("   ⏳ organization grant activity at capacity; retrying %s in %ds (%ds elapsed)"
+                % (what, delay, waited))
+            time.sleep(delay)
+            waited += delay
+            delay = min(delay * 2, ORG_RETRY_BACKOFF_CAP)
 
 
 def discover_organization_arn(orgs):
@@ -175,14 +212,14 @@ def create_grant(lm, lic, principal, operations, name):
     log("   operations : %s" % ", ".join(operations))
 
     try:
-        resp = lm.create_grant(
+        resp = with_org_retry(lambda: lm.create_grant(
             ClientToken=str(uuid.uuid4()),
             GrantName=name,
             LicenseArn=arn,
             Principals=[principal],
             HomeRegion=home_region,
             AllowedOperations=operations,
-        )
+        ), "distribution")
     except ClientError as exc:
         if is_duplicate_error(exc):
             existing = find_distributed_grant(lm, arn, principal)
@@ -226,13 +263,13 @@ def activate_grant(lm, grant):
         log("   ℹ️ grant already ACTIVE; nothing to do")
         return False
     log("   🚀 activating grant...")
-    resp = lm.create_grant_version(
+    resp = with_org_retry(lambda: lm.create_grant_version(
         ClientToken=str(uuid.uuid4()),
         GrantArn=grant["GrantArn"],
         Status="ACTIVE",
         SourceVersion=grant.get("Version"),
         Options={"ActivationOverrideBehavior": "ALL_GRANTS_PERMITTED_BY_ISSUER"},
-    )
+    ), "activation")
     log("   🎉 activation submitted (version %s)" % resp.get("Version"))
     return True
 
@@ -242,7 +279,7 @@ def process(lm, lic, principal):
     arn = lic["LicenseArn"]
     license_id = license_id_from_arn(arn)
     log("─" * 70)
-    log("🔎 license: %s" % license_id)
+    log("🔎 license: %s (%s)" % (license_id, license_name(lic)))
 
     grant_arn = parent_grant_arn(lic)
     if not grant_arn:
@@ -304,6 +341,7 @@ def build_parser():
 
 def main():
     args = build_parser().parse_args()
+    started = time.time()
 
     lm = boto3.client("license-manager")
     orgs = boto3.client("organizations")
@@ -348,6 +386,7 @@ def main():
     log("📊 Summary: %d distributed+activated, %d already distributed, "
         "%d ignored (expired/deleted), %d failed, %d total"
         % (done, skipped, len(ignored), failed, len(licenses)))
+    log("   elapsed: %.1fs" % (time.time() - started))
     return 0 if failed == 0 else 1
 
 

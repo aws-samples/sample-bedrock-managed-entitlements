@@ -2,11 +2,13 @@
 
 import os
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+
+from botocore.exceptions import ClientError
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lightweight"))
 
-from distribute_licenses import activate_grant, validate_apply_context
+from distribute_licenses import activate_grant, create_grant, validate_apply_context
 
 
 def _grant(status):
@@ -15,6 +17,18 @@ def _grant(status):
         "GrantStatus": status,
         "Version": "1",
     }
+
+
+def _org_activity_error():
+    return ClientError(
+        {
+            "Error": {
+                "Code": "ResourceLimitExceededException",
+                "Message": "Too many concurrent org grants are in progress.",
+            }
+        },
+        "CreateGrant",
+    )
 
 
 def test_activate_grant_submits_activation_after_workflow_completed():
@@ -49,3 +63,47 @@ def test_validate_apply_context_requires_matching_account_id():
 
     assert validate_apply_context(sts, "123456789012") == 0
     assert validate_apply_context(sts, "210987654321") == 1
+
+
+def test_create_grant_retries_when_org_activity_cap_is_hit():
+    lm = MagicMock()
+    lm.meta.region_name = "us-east-1"
+    lm.create_grant.side_effect = [
+        _org_activity_error(),
+        {
+            "GrantArn": "arn:aws:license-manager::111122223333:grant:g-child",
+            "Version": "2",
+        },
+    ]
+    lic = {
+        "LicenseArn": "arn:aws:license-manager::111122223333:license:l-test",
+        "HomeRegion": "us-east-1",
+    }
+
+    with patch("distribute_licenses.time.sleep") as sleep:
+        result = create_grant(
+            lm,
+            lic,
+            "arn:aws:organizations::111122223333:organization/o-test",
+            ["CheckoutLicense"],
+            "Grant to my organization",
+        )
+
+    assert result == "arn:aws:license-manager::111122223333:grant:g-child"
+    assert lm.create_grant.call_count == 2
+    sleep.assert_called_once_with(30)
+
+
+def test_activate_grant_retries_when_org_activity_cap_is_hit():
+    lm = MagicMock()
+    lm.create_grant_version.side_effect = [
+        _org_activity_error(),
+        {"Version": "2"},
+    ]
+
+    with patch("distribute_licenses.time.sleep") as sleep:
+        result = activate_grant(lm, _grant("WORKFLOW_COMPLETED"))
+
+    assert result is True
+    assert lm.create_grant_version.call_count == 2
+    sleep.assert_called_once_with(30)
