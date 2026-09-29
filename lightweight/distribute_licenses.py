@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Distribute every received AWS License Manager license to your whole AWS
+"""Distribute received Bedrock AWS License Manager licenses to your whole AWS
 Organization and activate each resulting grant -- with a review step first.
 
 Lightweight alternative to the CDK stack: no config file, no DynamoDB, no
@@ -7,9 +7,9 @@ Lambda. Just this script and ambient AWS credentials in the management
 account. See lightweight/README.md for when to use this vs. backfill_grants.py
 (the allow-list-scoped equivalent) or the full CDK automation.
 
-Default mode is dry-run: it lists every received license and shows exactly
-what would be distributed and activated, without calling any mutating API.
-Nothing is created until you re-run with --apply --confirm-account-id
+Default mode is dry-run: it lists every received Bedrock-matching license and
+shows exactly what would be distributed and activated, without calling any
+mutating API. Nothing is created until you re-run with --apply --confirm-account-id
 <account-id>, which must match the account you're actually running in.
 
 Usage:
@@ -18,14 +18,15 @@ Usage:
     # Apply after reviewing
     python3 lightweight/distribute_licenses.py --apply --confirm-account-id 123456789012
 
-Unlike backfill_grants.py, this script has no allow-list: it will plan (and,
-with --apply, distribute+activate) a grant for every received license that
-isn't EXPIRED/DELETED, regardless of issuer. That's what makes it
-"lightweight" -- no config/sellers.json to maintain -- but it also means the
-dry-run plan is your only review step. Read it before passing --apply.
+Unlike backfill_grants.py, this script has no seller allow-list. It scopes by
+license name instead: only received licenses whose LicenseName or ProductName
+contains "bedrock" are planned. That's what makes it "lightweight" -- no
+config/sellers.json to maintain -- but it also means the dry-run plan is your
+only review step. Read it before passing --apply.
 
 The script:
-    1. Lists every received license (ListReceivedLicenses); skips EXPIRED/DELETED.
+    1. Lists received licenses in us-east-1 (ListReceivedLicenses); skips
+       EXPIRED/DELETED and non-Bedrock licenses.
     2. Uses the organization ARN (DescribeOrganization) as the grant principal.
     3. --apply only: create_grant -> PENDING_WORKFLOW (already-distributed
        licenses reuse the existing org grant, making re-runs idempotent).
@@ -49,6 +50,8 @@ FAILED_STATES = {"REJECTED", "FAILED_WORKFLOW", "DELETED", "PENDING_DELETE"}
 IGNORED_LICENSE_STATES = {"EXPIRED", "DELETED"}
 DUPLICATE_HINTS = ("already has a grant", "duplicate", "already exist",
                     "already distributed", "conflict")
+LICENSE_MANAGER_REGION = "us-east-1"
+LICENSE_NAME_FILTER = "bedrock"
 POLL_INTERVAL = 30
 TIMEOUT = 3600
 
@@ -79,6 +82,12 @@ def parent_grant_arn(lic):
 def license_name(lic):
     """Human-readable name for logging: LicenseName, else ProductName, else '?'."""
     return lic.get("LicenseName") or lic.get("ProductName") or "?"
+
+
+def matches_license_scope(lic):
+    """True if LicenseName or ProductName contains LICENSE_NAME_FILTER."""
+    names = (lic.get("LicenseName") or "", lic.get("ProductName") or "")
+    return any(LICENSE_NAME_FILTER in name.lower() for name in names)
 
 
 def is_duplicate_error(exc):
@@ -158,20 +167,25 @@ def operations_from_parent(parent):
 
 
 def plan_licenses(licenses):
-    """Split received licenses into (planned, ignored) for the dry-run/plan step."""
+    """Split received licenses into (planned, ignored, excluded) for dry-run."""
     planned = []
     ignored = []
+    excluded = []
     for lic in licenses:
         status = lic.get("Status")
         if status in IGNORED_LICENSE_STATES:
             ignored.append(lic)
-        else:
+        elif matches_license_scope(lic):
             planned.append(lic)
-    return planned, ignored
+        else:
+            excluded.append(lic)
+    return planned, ignored, excluded
 
 
-def print_plan(planned, ignored, principal, apply_mode):
+def print_plan(planned, ignored, excluded, principal, apply_mode):
     print("Mode: %s" % ("apply" if apply_mode else "dry-run"))
+    print("License Manager region: %s" % LICENSE_MANAGER_REGION)
+    print("License scope filter: %r in LicenseName or ProductName" % LICENSE_NAME_FILTER)
     print()
     if planned:
         print("Planned grants (organization-wide, principal: %s):" % principal)
@@ -191,11 +205,15 @@ def print_plan(planned, ignored, principal, apply_mode):
         for lic in ignored:
             print("- %s" % license_id_from_arn(lic["LicenseArn"]))
 
+    if excluded:
+        print()
+        print("Excluded by scope filter: %d" % len(excluded))
+
     if not apply_mode:
         print()
         print("Dry-run only -- no API calls that create or modify grants were made.")
-        print("This has NO allow-list: every license above would be distributed and")
-        print("activated org-wide with --apply, regardless of issuer.")
+        print("This has NO seller allow-list: every Bedrock-matching license above")
+        print("would be distributed and activated org-wide with --apply.")
         print("Re-run with --apply --confirm-account-id <account-id> to proceed.")
 
 
@@ -320,8 +338,8 @@ def validate_apply_context(sts, confirm_account_id):
 def build_parser():
     parser = argparse.ArgumentParser(
         description=(
-            "Distribute and activate every received License Manager license "
-            "org-wide. Defaults to dry-run; requires --apply "
+            "Distribute and activate received Bedrock License Manager licenses "
+            "org-wide from us-east-1. Defaults to dry-run; requires --apply "
             "--confirm-account-id to make changes."
         )
     )
@@ -343,7 +361,7 @@ def main():
     args = build_parser().parse_args()
     started = time.time()
 
-    lm = boto3.client("license-manager")
+    lm = boto3.client("license-manager", region_name=LICENSE_MANAGER_REGION)
     orgs = boto3.client("organizations")
     try:
         principal = discover_organization_arn(orgs)
@@ -356,8 +374,8 @@ def main():
         log("no received licenses found in this region; nothing to do.")
         return 0
 
-    planned, ignored = plan_licenses(licenses)
-    print_plan(planned, ignored, principal, args.apply)
+    planned, ignored, excluded = plan_licenses(licenses)
+    print_plan(planned, ignored, excluded, principal, args.apply)
 
     if not args.apply:
         return 0
@@ -375,7 +393,7 @@ def main():
         return validation
 
     print()
-    log("found %d received license(s) to process" % len(planned))
+    log("found %d Bedrock-matching received license(s) to process" % len(planned))
 
     results = [process(lm, lic, principal) for lic in planned]
     done = results.count("done")
@@ -384,8 +402,8 @@ def main():
 
     log("═" * 70)
     log("📊 Summary: %d distributed+activated, %d already distributed, "
-        "%d ignored (expired/deleted), %d failed, %d total"
-        % (done, skipped, len(ignored), failed, len(licenses)))
+        "%d ignored (expired/deleted), %d excluded by scope, %d failed, %d total"
+        % (done, skipped, len(ignored), len(excluded), failed, len(licenses)))
     log("   elapsed: %.1fs" % (time.time() - started))
     return 0 if failed == 0 else 1
 

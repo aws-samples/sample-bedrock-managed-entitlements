@@ -1,6 +1,6 @@
 # Lightweight Path: `distribute_licenses.py`
 
-This folder is a **self-contained alternative** to the CDK automation in this repo. If you just want to fix License Manager's "Disabled → Active" billing gotcha for licenses you already have, without deploying any infrastructure, this is the fastest way to do it.
+This folder is a **self-contained alternative** to the CDK automation in this repo. If you just want to fix License Manager's "Disabled → Active" billing gotcha for Bedrock licenses you already have, without deploying any infrastructure, this is the fastest way to do it.
 
 **What you get:** one script, `boto3` only, no config file, no CDK, no Lambda/DynamoDB/EventBridge.
 
@@ -10,10 +10,11 @@ If you're not sure which path is right for you, see [Choose Your Path](../README
 
 ## Usage
 
-Run from your AWS Organizations **management account**, `us-east-1`:
+Run from your AWS Organizations **management account**. The script pins License Manager calls to `us-east-1`, because Bedrock managed-entitlement grants are expected there and customers often have a different default AWS CLI region.
 
 ```bash
-# 1. Dry-run: lists every received license and what would happen. No mutating API calls.
+# 1. Dry-run: lists every Bedrock-matching received license and what would happen.
+#    No mutating API calls.
 python3 lightweight/distribute_licenses.py
 
 # 2. Review the printed plan, then apply:
@@ -24,17 +25,18 @@ python3 lightweight/distribute_licenses.py --apply --confirm-account-id 12345678
 
 ## What it does (on `--apply`)
 
-1. Lists every received License Manager license (`ListReceivedLicenses`), skipping `EXPIRED`/`DELETED`.
-2. Discovers your organization ARN (`DescribeOrganization`) and uses it as the grant principal.
-3. Creates an org-wide grant for each license (`CreateGrant`) — re-runs are idempotent; an already-distributed license reuses its existing grant instead of erroring.
-4. Polls the grant until distribution finishes (`GetGrant` → `WORKFLOW_COMPLETED`).
-5. Activates the grant (`CreateGrantVersion(Status=ACTIVE)`), fixing the Disabled→Active gotcha.
+1. Lists received License Manager licenses in `us-east-1` (`ListReceivedLicenses`), skipping `EXPIRED`/`DELETED`.
+2. Keeps only licenses whose `LicenseName` or `ProductName` contains `bedrock`, and reports how many licenses were excluded by that scope filter.
+3. Discovers your organization ARN (`DescribeOrganization`) and uses it as the grant principal.
+4. Creates an org-wide grant for each matching license (`CreateGrant`) — re-runs are idempotent; an already-distributed license reuses its existing grant instead of erroring.
+5. Polls the grant until distribution finishes (`GetGrant` → `WORKFLOW_COMPLETED`).
+6. Activates the grant (`CreateGrantVersion(Status=ACTIVE)`), fixing the Disabled→Active gotcha.
 
 If License Manager reports that too many organization grant activities are already in progress, the script waits and retries the distribution or activation call before failing.
 
 ## Important: no allow-list
 
-Unlike everything else in this repo, `distribute_licenses.py` does **not** check received licenses against a seller allow-list. Every non-expired license currently in `ListReceivedLicenses` is in scope. That's what makes it lightweight — no `config/sellers.json` to create or maintain — but it also means the dry-run plan printed in step 1 is your only review step. Read it before passing `--apply`.
+Unlike everything else in this repo, `distribute_licenses.py` does **not** check received licenses against a seller allow-list. Every non-expired Bedrock-matching license currently in `ListReceivedLicenses` is in scope. That's what makes it lightweight — no `config/sellers.json` to create or maintain — but it also means the dry-run plan printed in step 1 is your only review step. Read it before passing `--apply`.
 
 If you want per-seller scoping, use [`../scripts/backfill_grants.py`](../scripts/backfill_grants.py) instead.
 
@@ -57,7 +59,8 @@ Read + grant-management only, no infrastructure to provision:
 | | `lightweight/distribute_licenses.py` | `scripts/backfill_grants.py` | Full CDK automation |
 |---|---|---|---|
 | Config file required | No | Yes (`config/sellers.json`) | Yes |
-| Allow-list scoped | No — every received license | Yes | Yes |
+| Allow-list scoped | No — every Bedrock-matching received license | Yes | Yes |
+| License Manager region | Pinned to `us-east-1` | Uses your configured region | Lambda runs in the deployed stack region |
 | Handles new offers going forward | No — one-shot, re-run manually | No — one-shot, re-run manually | Yes, automatically |
 | Infra deployed | None | None | EventBridge + Lambda + DynamoDB |
 | Review step before mutating | Dry-run by default, `--apply` required | Dry-run by default, `--apply` required | N/A (automatic) |
