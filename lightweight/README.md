@@ -23,6 +23,17 @@ python3 lightweight/distribute_licenses.py --apply --confirm-account-id 12345678
 
 `--confirm-account-id` must match the AWS account you're actually running in — a guard against accidentally running an org-wide grant operation against the wrong account (same pattern used by `bootstrap_prereqs.py` and `backfill_grants.py` elsewhere in this repo).
 
+By default, the script activates new grants with `ActivationOverrideBehavior=DISTRIBUTED_GRANTS_ONLY`, matching the full CDK automation default. This preserves existing grants while activating the new org-wide grant.
+
+Use `--replace-existing-grants` only when you intentionally want activation to replace existing grants permitted by the same issuer, for example during a planned legacy-grant cleanup or private-offer renewal. That mode uses `ActivationOverrideBehavior=ALL_GRANTS_PERMITTED_BY_ISSUER` and can disable existing grants during activation, so review the dry-run output first.
+
+```bash
+python3 lightweight/distribute_licenses.py \
+  --apply \
+  --confirm-account-id 123456789012 \
+  --replace-existing-grants
+```
+
 ## What it does (on `--apply`)
 
 1. Lists received License Manager licenses in `us-east-1` (`ListReceivedLicenses`), skipping `EXPIRED`/`DELETED`.
@@ -30,7 +41,7 @@ python3 lightweight/distribute_licenses.py --apply --confirm-account-id 12345678
 3. Discovers your organization ARN (`DescribeOrganization`) and uses it as the grant principal.
 4. Creates an org-wide grant for each matching license (`CreateGrant`) — re-runs are idempotent; an already-distributed license reuses its existing grant instead of erroring.
 5. Polls the grant until distribution finishes (`GetGrant` → `WORKFLOW_COMPLETED`).
-6. Activates the grant (`CreateGrantVersion(Status=ACTIVE)`), fixing the Disabled→Active gotcha.
+6. Activates the grant (`CreateGrantVersion(Status=ACTIVE)`), fixing the Disabled→Active gotcha. The default activation behavior is `DISTRIBUTED_GRANTS_ONLY`; `--replace-existing-grants` switches to `ALL_GRANTS_PERMITTED_BY_ISSUER`.
 
 If License Manager reports that too many organization grant activities are already in progress, the script waits and retries the distribution or activation call before failing.
 
@@ -64,5 +75,6 @@ Read + grant-management only, no infrastructure to provision:
 | Handles new offers going forward | No — one-shot, re-run manually | No — one-shot, re-run manually | Yes, automatically |
 | Infra deployed | None | None | EventBridge + Lambda + DynamoDB |
 | Review step before mutating | Dry-run by default, `--apply` required | Dry-run by default, `--apply` required | N/A (automatic) |
+| Replaces existing grants by default | No — opt in with `--replace-existing-grants` | No | No — opt in with `replaceLegacyGrants` |
 | Retries org grant activity cap | Yes | Uses the shared grant activation flow | Uses the shared grant activation flow |
 | Best for | Fastest path when you trust everything currently received | One-off backfill scoped to sellers you've already vetted | Ongoing, hands-off automation |
