@@ -47,7 +47,7 @@ def _org_activity_error():
     )
 
 
-def test_activate_grant_submits_activation_after_workflow_completed():
+def test_activate_grant_defaults_to_distributed_grants_only_after_workflow_completed():
     lm = MagicMock()
     lm.create_grant_version.return_value = {"Version": "2"}
 
@@ -59,6 +59,23 @@ def test_activate_grant_submits_activation_after_workflow_completed():
     assert kwargs["GrantArn"] == "arn:aws:license-manager::111122223333:grant:g-test"
     assert kwargs["Status"] == "ACTIVE"
     assert kwargs["SourceVersion"] == "1"
+    assert kwargs["Options"] == {
+        "ActivationOverrideBehavior": "DISTRIBUTED_GRANTS_ONLY"
+    }
+
+
+def test_activate_grant_can_replace_existing_grants_when_requested():
+    lm = MagicMock()
+    lm.create_grant_version.return_value = {"Version": "2"}
+
+    result = activate_grant(
+        lm,
+        _grant("WORKFLOW_COMPLETED"),
+        replace_existing_grants=True,
+    )
+
+    assert result is True
+    _, kwargs = lm.create_grant_version.call_args
     assert kwargs["Options"] == {
         "ActivationOverrideBehavior": "ALL_GRANTS_PERMITTED_BY_ISSUER"
     }

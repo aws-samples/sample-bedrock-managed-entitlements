@@ -32,8 +32,9 @@ The script:
        licenses reuse the existing org grant, making re-runs idempotent).
     4. --apply only: polls get_grant until WORKFLOW_COMPLETED (distribution done).
     5. --apply only: create_grant_version Status=ACTIVE
-       (ActivationOverrideBehavior=ALL_GRANTS_PERMITTED_BY_ISSUER); does not
-       wait for activation to finish.
+       (ActivationOverrideBehavior=DISTRIBUTED_GRANTS_ONLY by default); does
+       not wait for activation to finish. Pass --replace-existing-grants to
+       use ALL_GRANTS_PERMITTED_BY_ISSUER for legacy grant cleanup.
 """
 
 import argparse
@@ -182,10 +183,19 @@ def plan_licenses(licenses):
     return planned, ignored, excluded
 
 
-def print_plan(planned, ignored, excluded, principal, apply_mode):
+def print_plan(planned, ignored, excluded, principal, apply_mode, replace_existing_grants):
+    activation_behavior = (
+        "ALL_GRANTS_PERMITTED_BY_ISSUER"
+        if replace_existing_grants
+        else "DISTRIBUTED_GRANTS_ONLY"
+    )
     print("Mode: %s" % ("apply" if apply_mode else "dry-run"))
     print("License Manager region: %s" % LICENSE_MANAGER_REGION)
     print("License scope filter: %r in LicenseName or ProductName" % LICENSE_NAME_FILTER)
+    print("Activation override behavior: %s" % activation_behavior)
+    if replace_existing_grants:
+        print("WARNING: --replace-existing-grants can disable existing grants "
+              "permitted by the issuer during activation.")
     print()
     if planned:
         print("Planned grants (organization-wide, principal: %s):" % principal)
@@ -214,6 +224,9 @@ def print_plan(planned, ignored, excluded, principal, apply_mode):
         print("Dry-run only -- no API calls that create or modify grants were made.")
         print("This has NO seller allow-list: every Bedrock-matching license above")
         print("would be distributed and activated org-wide with --apply.")
+        print("By default, activation preserves existing grants. Add")
+        print("--replace-existing-grants only when you intentionally want to")
+        print("replace existing grants permitted by the issuer.")
         print("Re-run with --apply --confirm-account-id <account-id> to proceed.")
 
 
@@ -275,24 +288,30 @@ def wait_for_workflow(lm, grant_arn, what):
         time.sleep(POLL_INTERVAL)
 
 
-def activate_grant(lm, grant):
+def activate_grant(lm, grant, replace_existing_grants=False):
     """Returns True if an activation was issued, False if already ACTIVE."""
     if grant.get("GrantStatus") == "ACTIVE":
         log("   ℹ️ grant already ACTIVE; nothing to do")
         return False
+    activation_behavior = (
+        "ALL_GRANTS_PERMITTED_BY_ISSUER"
+        if replace_existing_grants
+        else "DISTRIBUTED_GRANTS_ONLY"
+    )
     log("   🚀 activating grant...")
+    log("   activation behavior: %s" % activation_behavior)
     resp = with_org_retry(lambda: lm.create_grant_version(
         ClientToken=str(uuid.uuid4()),
         GrantArn=grant["GrantArn"],
         Status="ACTIVE",
         SourceVersion=grant.get("Version"),
-        Options={"ActivationOverrideBehavior": "ALL_GRANTS_PERMITTED_BY_ISSUER"},
+        Options={"ActivationOverrideBehavior": activation_behavior},
     ), "activation")
     log("   🎉 activation submitted (version %s)" % resp.get("Version"))
     return True
 
 
-def process(lm, lic, principal):
+def process(lm, lic, principal, replace_existing_grants=False):
     """Returns 'done', 'skipped', or 'failed'. Caller has already filtered ignored licenses."""
     arn = lic["LicenseArn"]
     license_id = license_id_from_arn(arn)
@@ -316,7 +335,7 @@ def process(lm, lic, principal):
         if new_grant_arn is None:
             return "skipped"
         grant = wait_for_workflow(lm, new_grant_arn, "distribution")
-        activate_grant(lm, grant)
+        activate_grant(lm, grant, replace_existing_grants)
         log("   ✔ done: %s" % license_id)
         return "done"
     except (ClientError, BotoCoreError, RuntimeError) as exc:
@@ -354,6 +373,14 @@ def build_parser():
         default=None,
         help="Required with --apply. Must match the current AWS account ID.",
     )
+    parser.add_argument(
+        "--replace-existing-grants",
+        action="store_true",
+        help="Use ActivationOverrideBehavior=ALL_GRANTS_PERMITTED_BY_ISSUER "
+             "during activation. By default, the script uses "
+             "DISTRIBUTED_GRANTS_ONLY to preserve existing grants, matching "
+             "the CDK automation default.",
+    )
     return parser
 
 
@@ -375,7 +402,7 @@ def main():
         return 0
 
     planned, ignored, excluded = plan_licenses(licenses)
-    print_plan(planned, ignored, excluded, principal, args.apply)
+    print_plan(planned, ignored, excluded, principal, args.apply, args.replace_existing_grants)
 
     if not args.apply:
         return 0
@@ -395,7 +422,10 @@ def main():
     print()
     log("found %d Bedrock-matching received license(s) to process" % len(planned))
 
-    results = [process(lm, lic, principal) for lic in planned]
+    results = [
+        process(lm, lic, principal, args.replace_existing_grants)
+        for lic in planned
+    ]
     done = results.count("done")
     skipped = results.count("skipped")
     failed = results.count("failed")
