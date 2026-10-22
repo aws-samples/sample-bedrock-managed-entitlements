@@ -30,7 +30,7 @@ This sample automates the grant distribution step so you never have to manually 
 5. **Retries activation asynchronously** if License Manager is still processing the grant
 6. **Notifies** your team via Amazon SNS
 
-📎 **Reference**: [Managed entitlements for Bedrock slides](https://wirjo.github.io/slides/bedrock-managed-entitlements/)
+📎 **Reference**: [Managed entitlements for Bedrock slides](https://aws-samples.github.io/sample-bedrock-managed-entitlements/slides/)
 
 ## Scope & Limitations
 

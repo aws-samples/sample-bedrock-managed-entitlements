@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Making private model pricing work at scale</title>
+<link rel="stylesheet" href="assets/colors_and_type.css">
+<script src="assets/deck-stage.js"></script>
+<script>
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'p' || e.key === 'P') {
+    const deck = document.querySelector('deck-stage');
+    if (!deck) return;
+    if (!document.fullscreenElement) {
+      deck.setAttribute('no-rail', '');
+      document.documentElement.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+      deck.removeAttribute('no-rail');
+    }
+    e.preventDefault();
+  }
+});
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) {
+    const deck = document.querySelector('deck-stage');
+    if (deck) deck.removeAttribute('no-rail');
+  }
+});
+</script>
+<style>
+  html, body { margin: 0; background: #000; }
+  deck-stage { --slide-width: 1920px; --slide-height: 1080px; }
+
+  .slide {
+    position: relative; width: 1920px; height: 1080px; overflow: hidden;
+    font-family: var(--aws-font-display);
+    background: var(--aws-white); color: var(--aws-gray-850);
+  }
+  .slide h1, .slide h2, .slide h3, .slide p { margin: 0; }
+  .logo-tl { position: absolute; top: 73px; left: 80px; height: 76px; width: auto; }
+  .logo-br { position: absolute; bottom: 73px; right: 80px; height: 76px; width: auto; }
+
+  .eyebrow {
+    font-family: var(--aws-font-mono); font-size: 22px; font-weight: 400;
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .caption {
+    font-family: var(--aws-font-mono); font-size: 18px;
+    text-transform: uppercase; letter-spacing: 0.1em;
+  }
+  .h-cover  { font-size: 120px; line-height: 1.05; font-weight: 400; letter-spacing: -0.005em; text-wrap: pretty; }
+  .h-title  { font-size: 72px;  line-height: 1.1;  font-weight: 400; letter-spacing: -0.005em; text-wrap: pretty; }
+  .h-content{ font-size: 56px;  line-height: 1.15; font-weight: 400; text-wrap: pretty; }
+  .h-stat   { font-size: 200px; line-height: 0.95; font-weight: 400; letter-spacing: -0.02em; }
+  .body-lg  { font-size: 28px;  line-height: 1.4;  font-weight: 400; }
+  .body-md  { font-size: 24px;  line-height: 1.4;  font-weight: 400; }
+  .body-sm  { font-size: 20px;  line-height: 1.4;  font-weight: 400; }
+
+  .slide-no { position: absolute; right: 80px; bottom: 73px; font-family: var(--aws-font-mono); font-size: 16px; letter-spacing: 0.08em; color: var(--aws-gray-500); }
+
+  .rule { width: 56px; height: 4px; background: var(--aws-gray-850); }
+
+  .cover-gradient {
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, var(--aws-purple-50) 0%, var(--aws-cyan-50) 50%, var(--aws-white) 100%);
+  }
+
+  .flow-container { display: flex; align-items: center; gap: 24px; }
+  .flow-step {
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    padding: 32px 40px; border-radius: 16px;
+    background: var(--aws-gray-100); text-align: center; min-width: 200px;
+  }
+  .flow-step-number {
+    font-family: var(--aws-font-mono); font-size: 16px; font-weight: 700;
+    color: var(--aws-purple-700); text-transform: uppercase; letter-spacing: 0.1em;
+  }
+  .flow-step-label { font-size: 24px; font-weight: 500; }
+  .flow-step-desc { font-size: 18px; color: var(--aws-gray-600); max-width: 220px; }
+  .flow-arrow { font-size: 36px; color: var(--aws-gray-400); }
+
+  .flow-icon { width: 48px; height: 48px; }
+
+  .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; }
+  .card {
+    padding: 48px; border-radius: 16px; background: var(--aws-gray-50);
+    border: 1px solid var(--aws-gray-250);
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  .card-title { font-size: 28px; font-weight: 500; }
+  .card-body { font-size: 22px; color: var(--aws-gray-650); line-height: 1.4; }
+
+  .state-flow { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .state-badge {
+    padding: 12px 24px; border-radius: 999px; font-size: 20px; font-weight: 500;
+  }
+  .state-pending { background: var(--aws-amber-100); color: var(--aws-amber-700); }
+  .state-active { background: var(--aws-lime-100); color: var(--aws-lime-700); }
+  .state-disabled { background: var(--aws-gray-200); color: var(--aws-gray-600); }
+  .state-deleted { background: var(--aws-rose-100); color: var(--aws-rose-700); }
+  .state-arrow { color: var(--aws-gray-400); font-size: 24px; }
+
+  .gotcha-box {
+    padding: 24px 32px; border-radius: 12px; background: var(--aws-amber-50);
+    border: 2px solid var(--aws-amber-300); display: flex; gap: 16px; align-items: start;
+  }
+  .gotcha-icon { font-size: 28px; flex-shrink: 0; }
+  .gotcha-text { font-size: 22px; color: var(--aws-gray-750); line-height: 1.5; }
+
+  .console-step {
+    display: grid; grid-template-columns: 56px 1fr; gap: 20px; align-items: start;
+    padding: 28px 32px; border-radius: 12px; background: var(--aws-gray-50);
+    border: 1px solid var(--aws-gray-250);
+  }
+  .console-step-num {
+    width: 44px; height: 44px; border-radius: 50%; background: var(--aws-purple-600);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--aws-font-mono); font-size: 20px; font-weight: 700; color: var(--aws-white);
+  }
+  .console-step-title { font-size: 24px; font-weight: 500; margin-bottom: 6px; }
+  .console-step-detail { font-size: 20px; color: var(--aws-gray-600); line-height: 1.4; }
+  .console-path {
+    font-family: var(--aws-font-mono); font-size: 18px; color: var(--aws-purple-700);
+    background: var(--aws-purple-50); padding: 4px 12px; border-radius: 6px;
+    display: inline-block; margin-top: 8px;
+  }
+
+  .vs-divider {
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--aws-font-mono); font-size: 20px; font-weight: 700;
+    color: var(--aws-gray-400); padding: 0 24px;
+  }
+  .option-card {
+    flex: 1; padding: 36px; border-radius: 16px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .option-card.option-a { background: var(--aws-purple-50); border: 2px solid var(--aws-purple-200); }
+  .option-card.option-b { background: var(--aws-cyan-50); border: 2px solid var(--aws-cyan-200); }
+  .option-label {
+    font-family: var(--aws-font-mono); font-size: 16px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.1em;
+  }
+  .option-title { font-size: 26px; font-weight: 500; }
+  .option-detail { font-size: 20px; color: var(--aws-gray-650); line-height: 1.4; }
+
+  .checklist { display: flex; flex-direction: column; gap: 32px; }
+  .check-item { display: grid; grid-template-columns: 48px 1fr; gap: 20px; align-items: start; }
+  .check-icon {
+    width: 40px; height: 40px; border-radius: 50%; background: var(--aws-purple-100);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--aws-font-mono); font-size: 18px; font-weight: 700; color: var(--aws-purple-700);
+  }
+
+  .faq-list { display: flex; flex-direction: column; gap: 40px; }
+  .faq-item { display: flex; flex-direction: column; gap: 8px; }
+  .faq-q { font-size: 26px; font-weight: 500; color: var(--aws-gray-850); }
+  .faq-a { font-size: 22px; color: var(--aws-gray-600); line-height: 1.4; }
+
+  .accent-bar {
+    position: absolute; top: 0; left: 0; right: 0; height: 8px;
+    background: linear-gradient(90deg, var(--aws-purple-400), var(--aws-cyan-400));
+  }
+
+  .problem-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
+  .account-box {
+    padding: 28px; border-radius: 12px; border: 2px solid var(--aws-gray-300);
+    text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center;
+  }
+  .account-box.primary { border-color: var(--aws-purple-400); background: var(--aws-purple-50); }
+  .account-box.faded { opacity: 0.5; border-style: dashed; }
+  .account-label { font-family: var(--aws-font-mono); font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--aws-gray-550); }
+  .account-status { font-size: 18px; font-weight: 500; }
+  .status-yes { color: var(--aws-lime-600); }
+  .status-no { color: var(--aws-rose-600); }
+
+  .qr-panel {
+    padding: 36px; border-radius: 20px; background: var(--aws-white);
+    border: 1px solid var(--aws-gray-250);
+    display: flex; flex-direction: column; align-items: center; gap: 18px;
+  }
+  .qr-panel img { width: 300px; height: 300px; display: block; }
+  .qr-url {
+    font-family: var(--aws-font-mono); font-size: 17px; letter-spacing: 0.01em;
+    color: var(--aws-gray-650); text-align: center; line-height: 1.4;
+  }
+  .cta-list { display: flex; flex-direction: column; gap: 28px; }
+  .cta-item { display: grid; grid-template-columns: 40px 1fr; gap: 20px; align-items: start; }
+  .cta-dot {
+    width: 32px; height: 32px; border-radius: 50%; background: var(--aws-purple-100);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--aws-font-mono); font-size: 16px; font-weight: 700; color: var(--aws-purple-700);
+  }
+  .cta-item-title { font-size: 26px; font-weight: 500; margin-bottom: 4px; }
+  .cta-item-desc { font-size: 21px; color: var(--aws-gray-650); line-height: 1.4; }
+
+  .managed-policy-callout {
+    padding: 30px 36px; border-radius: 16px;
+    background: var(--aws-purple-50); border: 2px solid var(--aws-purple-300);
+    display: grid; grid-template-columns: 1fr auto; gap: 32px; align-items: center;
+  }
+  .managed-policy-label {
+    font-family: var(--aws-font-mono); font-size: 15px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.1em; color: var(--aws-purple-700);
+  }
+  .managed-policy-name {
+    font-family: var(--aws-font-mono); font-size: 34px; line-height: 1.18;
+    color: var(--aws-gray-850); font-weight: 700; margin-top: 8px;
+  }
+  .managed-policy-pill {
+    font-family: var(--aws-font-mono); font-size: 18px; font-weight: 700;
+    color: var(--aws-white); background: var(--aws-purple-700);
+    border-radius: 999px; padding: 14px 22px; white-space: nowrap;
+  }
+  .perm-row { display: flex; flex-direction: column; gap: 8px; }
+  .perm-role { font-size: 26px; font-weight: 500; }
+  .perm-note { font-size: 19px; color: var(--aws-gray-650); line-height: 1.4; }
+  .perm-note code {
+    font-family: var(--aws-font-mono); font-size: 17px;
+    color: var(--aws-purple-700); background: var(--aws-purple-50);
+    padding: 1px 6px; border-radius: 4px;
+  }
+  .perm-qr {
+    margin-top: auto; padding: 18px 22px; border-radius: 14px; background: var(--aws-gray-50);
+    border: 1px solid var(--aws-gray-250);
+    display: grid; grid-template-columns: 118px 1fr; gap: 22px; align-items: center;
+  }
+  .perm-qr img { width: 118px; height: 118px; display: block; }
+  .perm-qr-url {
+    font-family: var(--aws-font-mono); font-size: 14px; letter-spacing: 0.01em;
+    color: var(--aws-gray-550); line-height: 1.4; margin-top: 10px;
+  }
+
+  .code-block {
+    font-family: var(--aws-font-mono); font-size: 12.8px; line-height: 1.43;
+    background: var(--aws-gray-850); color: var(--aws-gray-100);
+    padding: 24px 28px; border-radius: 12px; margin: 0;
+    white-space: pre; overflow: hidden;
+  }
+  .code-block .k { color: var(--aws-cyan-300); }
+  .code-block .s { color: var(--aws-lime-300); }
+  .code-block .hi { color: var(--aws-amber-300); font-weight: 700; }
+</style>
+<script type="application/json" id="speaker-notes">
+[
+  "Managed Entitlements solves a common pain point: you negotiate private pricing for a model, but sharing it across your org is complex. This deck explains how to make it simple.",
+  "The core problem: private pricing subscriptions are per-account. Without Managed Entitlements, every account needs its own subscription - defeating the purpose of centralized procurement.",
+  "Managed Entitlements is the answer: subscribe once in one account, then distribute the license everywhere. Centralized management, clear visibility, easy auditing.",
+  "Three simple steps: subscribe to the model, a license is auto-created in License Manager, then grant it to your org or specific accounts.",
+  "Two paths for distribution: org-wide is automatic and covers new accounts; individual grants give targeted control. Pick what fits your governance model.",
+  "Three prerequisites before you start: all-features org, License Manager SLR, and Marketplace trusted access. Console setup takes about 5 minutes.",
+  "Permissions are where this trips up, so lead with the simple path. For procurement, attach AWSMarketplaceManageSubscriptions and let them accept the private offer in Marketplace. The granular IAM policy is secondary and mainly for the org or license administrator in the management account, or a delegated member account. Highlighted in the JSON are the two people forget. UpdateServiceSettings turns on org-wide distribution. CreateGrantVersion is literally the Activate button - without it grants stay Disabled and you keep paying list price. Resource is star because licenses and grants don't exist until Marketplace creates them, so scope by who you attach the role to. Don't region-lock it - everything is us-east-1. QR goes to the aws-samples repo, which ships all of this as CDK.",
+  "Grant lifecycle is simple: Pending to Active (or Rejected/Deleted). Grants must be Active before anyone can invoke the model.",
+  "Now let's walk through the exact console steps. Three parts: create the grant, activate it, and confirm the discount is actually flowing to your accounts.",
+  "First prerequisite: in AWS Marketplace Settings, create the License Manager service-linked role. This enables cross-account license distribution via Organizations.",
+  "Create the grant: find your Org ID in Organizations, then go to License Manager, select your license, and fill in the Create Grant form with a name and the Org ID.",
+  "The grant target field accepts three options: a specific account ID for targeted access, an Organization ID for org-wide coverage, or an OU ID for scoped rollouts. Most customers use org-wide.",
+  "First time you create an org-level grant, you'll be prompted to Link AWS Organizations. This is a one-time, irreversible step that adds SLRs to all member accounts.",
+  "Key gotcha: after creation, grants land in Disabled state — they auto-accept but do NOT auto-activate. Disabled means no negotiated rate is applied yet.",
+  "Click into the grant, hit the Activate button top-right, and confirm. The dialog warns about replacing existing active grants for the same product.",
+  "After activation, the grant transitions from Processing to Workflow completed. This confirms the entitlement is live and the negotiated rate should now apply.",
+  "Final confirmation: check Cost Explorer or billing for the member accounts. Compare billed rate against list price vs. MPPO rate. Billing data can take 24-48 hours.",
+  "Common questions answered. Key points: subscriptions are per model, org grants auto-cover new accounts, and you can revoke anytime.",
+  "Don't do this by hand every time. Scan the QR for the aws-samples solution — it watches for new Marketplace agreements and creates plus activates the org-wide grant automatically, so the Disabled-by-default trap never costs you money. Serverless, roughly zero dollars a month at rest, interactive setup script, and a seller allow-list so only approved sellers trigger it. Deploy to your Organizations management account in us-east-1."
+]
+</script>
+</head>
+<body>
+
+<deck-stage>
+
+  <!-- 1. COVER -->
+  <section class="slide" data-screen-label="01 Cover">
+    <div class="cover-gradient"></div>
+    <div style="position: absolute; left: 80px; top: 73px; right: 80px; bottom: 73px; display: flex; flex-direction: column; justify-content: center;">
+      <div class="eyebrow" style="color: var(--aws-purple-700); margin-bottom: 32px;">AMAZON BEDROCK</div>
+      <h1 class="h-cover" style="max-width: 1500px;">Making private model pricing work at scale</h1>
+      <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 48px; max-width: 900px;">
+        Subscribe once, distribute everywhere with Managed Entitlements
+      </p>
+    </div>
+    <img class="logo-br" src="assets/aws-logo-gray850.svg" alt="AWS">
+  </section>
+
+  <!-- 2. THE PROBLEM -->
+  <section class="slide" data-screen-label="02 The problem">
+    <div class="accent-bar"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 22px;">THE PROBLEM</div>
+      <h1 class="h-title" style="max-width: 1400px;">Private pricing is per-account, not per-org</h1>
+      <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 32px; max-width: 1100px;">
+        You negotiate a great rate for a model via AWS Marketplace. But each account needs its own subscription to use it - creating procurement overhead and compliance gaps.
+      </p>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; top: 560px;">
+      <div class="problem-grid">
+        <div class="account-box primary">
+          <div class="account-label">Management acct</div>
+          <img src="assets/icons/Arch_Amazon-Bedrock_48.png" alt="Bedrock" style="width: 48px; height: 48px;">
+          <div class="account-status status-yes">Subscribed</div>
+        </div>
+        <div class="account-box faded">
+          <div class="account-label">Dev account</div>
+          <img src="assets/icons/Arch_Amazon-Bedrock_48.png" alt="Bedrock" style="width: 48px; height: 48px; opacity: 0.4;">
+          <div class="account-status status-no">No access</div>
+        </div>
+        <div class="account-box faded">
+          <div class="account-label">Staging</div>
+          <img src="assets/icons/Arch_Amazon-Bedrock_48.png" alt="Bedrock" style="width: 48px; height: 48px; opacity: 0.4;">
+          <div class="account-status status-no">No access</div>
+        </div>
+        <div class="account-box faded">
+          <div class="account-label">Production</div>
+          <img src="assets/icons/Arch_Amazon-Bedrock_48.png" alt="Bedrock" style="width: 48px; height: 48px; opacity: 0.4;">
+          <div class="account-status status-no">No access</div>
+        </div>
+      </div>
+    </div>
+    <div class="slide-no">02 / 19</div>
+  </section>
+
+  <!-- 3. THE SOLUTION -->
+  <section class="slide" data-screen-label="03 The solution">
+    <div class="accent-bar"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 22px;">THE SOLUTION</div>
+      <h1 class="h-title" style="max-width: 1500px;">Managed Entitlements</h1>
+      <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 32px; max-width: 1100px;">
+        Subscribe to a Bedrock model once. Distribute the license to every account in your org through AWS License Manager. No repeat subscriptions needed.
+      </p>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; top: 540px;">
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-title">Centralized management</div>
+          <div class="card-body">One subscription, one license. See all model access from a single pane in License Manager.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Org-wide distribution</div>
+          <div class="card-body">Grant to your entire Organization ID. New accounts automatically inherit access.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Compliance-friendly</div>
+          <div class="card-body">Clear audit trail of who has access, when it was granted, and by whom.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Revoke anytime</div>
+          <div class="card-body">Delete a grant to instantly remove access. Fine-grained control per account or org-wide.</div>
+        </div>
+      </div>
+    </div>
+    <div class="slide-no">03 / 19</div>
+  </section>
+
+  <!-- 4. HOW IT WORKS -->
+  <section class="slide" data-screen-label="04 How it works">
+    <div class="accent-bar"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 22px;">HOW IT WORKS</div>
+      <h1 class="h-title" style="max-width: 1500px;">Three steps to org-wide access</h1>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; top: 460px; bottom: 200px; display: flex; align-items: center;">
+      <div class="flow-container" style="width: 100%; justify-content: space-between;">
+        <div class="flow-step" style="flex: 1;">
+          <div class="flow-step-number">Step 1</div>
+          <img src="assets/icons/Arch_Amazon-Bedrock_48.png" alt="Bedrock" class="flow-icon">
+          <div class="flow-step-label">Subscribe</div>
+          <div class="flow-step-desc">Subscribe to a model via AWS Marketplace. First API call activates it.</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step" style="flex: 1;">
+          <div class="flow-step-number">Step 2</div>
+          <img src="assets/icons/Arch_AWS-License-Manager_48.png" alt="License Manager" class="flow-icon">
+          <div class="flow-step-label">License created</div>
+          <div class="flow-step-desc">License Manager auto-generates a license in us-east-1.</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step" style="flex: 1;">
+          <div class="flow-step-number">Step 3</div>
+          <img src="assets/icons/Arch_AWS-Organizations_48.png" alt="Organizations" class="flow-icon">
+          <div class="flow-step-label">Grant access</div>
+          <div class="flow-step-desc">Create grants to your Org ID or specific account IDs.</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step" style="flex: 1; background: var(--aws-lime-50); border: 2px solid var(--aws-lime-200);">
+          <div class="flow-step-number" style="color: var(--aws-lime-700);">Done</div>
+          <div style="font-size: 48px;">✓</div>
+          <div class="flow-step-label">All accounts active</div>
+          <div class="flow-step-desc">Recipients accept and activate. Org grants auto-accept, then require activation.</div>
+        </div>
+      </div>
+    </div>
+    <div class="slide-no">04 / 19</div>
+  </section>
+
+  <!-- 5. TWO PATHS -->
+  <section class="slide" data-screen-label="05 Two distribution paths">
+    <div class="accent-bar"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 22px;">DISTRIBUTION</div>
+      <h1 class="h-title" style="max-width: 1500px;">Two ways to share access</h1>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; top: 480px; bottom: 200px; display: grid; grid-template-columns: 1fr 1fr; gap: 80px;">
+      <div style="display: flex; flex-direction: column; gap: 32px;">
+        <div class="rule" style="background: var(--aws-purple-500);"></div>
+        <h2 style="font-size: 36px; font-weight: 400;">Grant to Organization ID</h2>
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <p class="body-md" style="color: var(--aws-gray-650);">One grant covers all member accounts</p>
+          <p class="body-md" style="color: var(--aws-gray-650);">New accounts auto-inherit</p>
+          <p class="body-md" style="color: var(--aws-gray-650);">Bulk activate from management account</p>
+          <p class="body-md" style="color: var(--aws-lime-700); font-weight: 500;">Best for: broad access across the org</p>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 32px;">
+        <div class="rule" style="background: var(--aws-cyan-500);"></div>
+        <h2 style="font-size: 36px; font-weight: 400;">Grant to individual accounts</h2>
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <p class="body-md" style="color: var(--aws-gray-650);">Target specific account IDs</p>
+          <p class="body-md" style="color: var(--aws-gray-650);">Recipient must accept + activate</p>
+          <p class="body-md" style="color: var(--aws-gray-650);">New accounts need manual grants</p>
+          <p class="body-md" style="color: var(--aws-cyan-700); font-weight: 500;">Best for: controlled rollout, specific teams</p>
+        </div>
+      </div>
+    </div>
+    <div class="slide-no">05 / 19</div>
+  </section>
+
+  <!-- 6. SETUP CHECKLIST -->
+  <section class="slide" data-screen-label="06 Setup checklist">
+    <div class="accent-bar"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 22px;">PREREQUISITES</div>
+      <h1 class="h-title" style="max-width: 1500px;">Setup in 5 minutes</h1>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; top: 480px; bottom: 200px;">
+      <div class="checklist">
+        <div class="check-item">
+          <div class="check-icon">1</div>
+          <div>
+            <div class="body-lg" style="font-weight: 500;">Enable "all features" in AWS Organizations</div>
+            <div class="body-md" style="color: var(--aws-gray-600); margin-top: 8px;">Required for cross-account license distribution</div>
+          </div>
+        </div>
+        <div class="check-item">
+          <div class="check-icon">2</div>
+          <div>
+            <div class="body-lg" style="font-weight: 500;">Set up License Manager service-linked role</div>
+            <div class="body-md" style="color: var(--aws-gray-600); margin-top: 8px;">Open License Manager console in us-east-1, accept SLR, enable "Link AWS Organization accounts"</div>
+          </div>
+        </div>
+        <div class="check-item">
+          <div class="check-icon">3</div>
+          <div>
+            <div class="body-lg" style="font-weight: 500;">Enable Marketplace trusted access</div>
+            <div class="body-md" style="color: var(--aws-gray-600); margin-top: 8px;">Marketplace console → Settings → "Enable trusted access across your organization"</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="slide-no">06 / 19</div>
+  </section>
+
+  <!-- 7. PERMISSIONS + SAMPLE IAM POLICY -->
+  <section class="slide" data-screen-label="07 Permissions">
+    <div class="accent-bar"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 176px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 18px;">PERMISSIONS</div>
+      <h1 class="h-title" style="max-width: 1600px; font-size: 64px;">Make sure you have the right permissions</h1>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; top: 300px; bottom: 76px; display: flex; flex-direction: column; gap: 24px;">
+      <div class="managed-policy-callout">
+        <div>
+          <div class="managed-policy-label">Procurement fast path</div>
+          <div class="managed-policy-name">AWSMarketplaceManageSubscriptions</div>
+          <div class="perm-note" style="font-size: 22px; margin-top: 12px; max-width: 1120px;">Attach the AWS managed policy so procurement can accept the private offer in Marketplace. No custom JSON needed for the subscription step.</div>
+        </div>
+        <div class="managed-policy-pill">Use this first</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 720px 1fr; gap: 44px; align-items: start;">
+<pre class="code-block">{
+  <span class="k">"Version"</span>: <span class="s">"2012-10-17"</span>,
+  <span class="k">"Statement"</span>: [
+    {
+      <span class="k">"Sid"</span>: <span class="s">"LicenseAdminSetupAndGrants"</span>,
+      <span class="k">"Effect"</span>: <span class="s">"Allow"</span>, <span class="k">"Resource"</span>: <span class="s">"*"</span>,
+      <span class="k">"Action"</span>: [
+        <span class="s">"organizations:DescribeOrganization"</span>,
+        <span class="s">"organizations:EnableAWSServiceAccess"</span>,
+        <span class="s">"organizations:ListAWSServiceAccessForOrganization"</span>,
+        <span class="s">"license-manager:GetServiceSettings"</span>,
+        <span class="hi">"license-manager:UpdateServiceSettings"</span>,
+        <span class="s">"license-manager:ListReceivedLicenses"</span>,
+        <span class="hi">"license-manager:AcceptGrant"</span>,
+        <span class="hi">"license-manager:GetLicense"</span>,
+        <span class="hi">"license-manager:GetLicenseUsage"</span>,
+        <span class="s">"license-manager:ListDistributedGrants"</span>,
+        <span class="s">"license-manager:GetGrant"</span>,
+        <span class="s">"license-manager:CreateGrant"</span>,
+        <span class="hi">"license-manager:CreateGrantVersion"</span>,
+        <span class="s">"license-manager:DeleteGrant"</span>,
+        <span class="s">"iam:CreateServiceLinkedRole"</span>
+      ]
+    }
+  ]
+}</pre>
+      <div style="display: flex; flex-direction: column; gap: 22px;">
+        <div class="perm-row">
+          <div class="perm-role">Granular admin policy</div>
+          <div class="perm-note">Use custom IAM for the org / license administrator in the management account, or a delegated member account. This role runs the one-time enablement, then creates and activates grants.</div>
+        </div>
+        <div class="perm-note" style="line-height: 1.45;">
+          <strong>Activation needs both read and write access.</strong> Add <code>AcceptGrant</code>, <code>GetLicense</code>, and <code>GetLicenseUsage</code>; <code>CreateGrantVersion</code> performs the activation.
+        </div>
+        <div class="perm-note" style="line-height: 1.45;">
+          <strong>Resource is <code>"*"</code></strong> because licenses and grants don't exist until Marketplace creates them. Scope by who you attach the role to. Delegating? The management account also needs <code>organizations:RegisterDelegatedAdministrator</code>. Everything lives in <strong>us-east-1</strong> - don't region-lock it.
+        </div>
+        <div class="perm-qr">
+          <img src="assets/qr-github-sample.svg" alt="QR code linking to github.com/aws-samples/sample-bedrock-managed-entitlements">
+          <div>
+            <div class="perm-role" style="margin-bottom: 6px;">Code sample</div>
+            <div class="perm-note">The aws-samples solution ships these policies as CDK.</div>
+            <div class="perm-qr-url">github.com/aws-samples/<br>sample-bedrock-managed-entitlements</div>
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
+    <div class="slide-no">07 / 19</div>
+  </section>
+
+  <!-- 9. GRANT LIFECYCLE -->
+  <section class="slide" data-screen-label="08 Grant lifecycle">
+    <div class="accent-bar"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 22px;">LIFECYCLE</div>
+      <h1 class="h-title" style="max-width: 1500px;">Grant states at a glance</h1>
+      <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 24px;">Grants must be in Active state before users can invoke Bedrock models</p>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; top: 520px;">
+      <div style="display: flex; flex-direction: column; gap: 48px;">
+        <div style="display: flex; align-items: center; gap: 24px;">
+          <div class="body-md" style="width: 140px; color: var(--aws-gray-550);">Happy path</div>
+          <div class="state-flow">
+            <div class="state-badge state-pending">Pending acceptance</div>
+            <div class="state-arrow">→</div>
+            <div class="state-badge state-disabled">Disabled (accepted)</div>
+            <div class="state-arrow">→</div>
+            <div class="state-badge state-active">Active</div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 24px;">
+          <div class="body-md" style="width: 140px; color: var(--aws-gray-550);">Org grants</div>
+          <div class="state-flow">
+            <div class="state-badge state-pending">Created</div>
+            <div class="state-arrow">→</div>
+            <div class="state-badge state-disabled">Disabled (auto-accepted)</div>
+            <div class="state-arrow">→</div>
+            <div class="state-badge state-active">Active (manual)</div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 24px;">
+          <div class="body-md" style="width: 140px; color: var(--aws-gray-550);">Terminal</div>
+          <div class="state-flow">
+            <div class="state-badge state-deleted">Rejected</div>
+            <div style="margin: 0 8px; color: var(--aws-gray-400);">or</div>
+            <div class="state-badge state-deleted">Deleted</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="slide-no">08 / 19</div>
+  </section>
+
+  <!-- 8. SECTION COVER: CONSOLE WALKTHROUGH -->
+  <section class="slide" data-screen-label="09 Section: Console walkthrough">
+    <div class="cover-gradient"></div>
+    <div style="position: absolute; left: 80px; top: 73px; right: 80px; bottom: 73px; display: flex; flex-direction: column; justify-content: center;">
+      <div class="eyebrow" style="color: var(--aws-purple-700); margin-bottom: 32px;">CONSOLE WALKTHROUGH</div>
+      <h1 class="h-cover" style="max-width: 1400px; font-size: 96px;">Step-by-step in the AWS Console</h1>
+      <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 48px; max-width: 1000px;">
+        Five steps to get your managed entitlements working end-to-end.
+      </p>
+      <div style="margin-top: 56px; display: flex; gap: 36px; flex-wrap: wrap;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div class="console-step-num" style="width: 36px; height: 36px; font-size: 16px;">1</div>
+          <span class="body-md">Enable Marketplace SLR</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div class="console-step-num" style="width: 36px; height: 36px; font-size: 16px;">2</div>
+          <span class="body-md">Create grant</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div class="console-step-num" style="width: 36px; height: 36px; font-size: 16px;">3</div>
+          <span class="body-md">Check grant status</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div class="console-step-num" style="width: 36px; height: 36px; font-size: 16px;">4</div>
+          <span class="body-md">Activate</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div class="console-step-num" style="width: 36px; height: 36px; font-size: 16px;">5</div>
+          <span class="body-md">Confirm discount</span>
+        </div>
+      </div>
+    </div>
+    <img class="logo-br" src="assets/aws-logo-gray850.svg" alt="AWS">
+  </section>
+
+  <!-- 9. STEP 1: ENABLE MARKETPLACE SLR -->
+  <section class="slide" data-screen-label="10 Console: Marketplace SLR setup">
+    <div class="accent-bar"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 22px;">STEP 1 — ENABLE MARKETPLACE SLR</div>
+      <h1 class="h-title" style="max-width: 1500px;">Enable Marketplace License Manager integration</h1>
+      <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 20px;">
+        In AWS Marketplace → Settings, create the service-linked role for License Manager integration.
+      </p>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; top: 440px; bottom: 73px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center;">
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <p class="body-sm" style="color: var(--aws-gray-550); text-align: center;">Before — SLR not created</p>
+        <img src="assets/screenshots/Settings-AWS-Marketplace-Global-2026-06-26_03_51_PM.png" style="width: 100%; border-radius: 12px; border: 2px solid var(--aws-gray-250); box-shadow: 0 4px 24px rgba(0,0,0,0.08);" alt="Marketplace settings before SLR">
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <p class="body-sm" style="color: var(--aws-gray-550); text-align: center;">After — SLR successfully created ✓</p>
+        <img src="assets/screenshots/Settings-AWS-Marketplace-Global-2026-06-26_03_52_PM.png" style="width: 100%; border-radius: 12px; border: 2px solid var(--aws-lime-300); box-shadow: 0 4px 24px rgba(0,0,0,0.08);" alt="Marketplace settings SLR created">
+      </div>
+    </div>
+    <div class="slide-no">10 / 19</div>
+  </section>
+
+  <!-- 10. STEP 2: CREATE GRANT -->
+  <section class="slide" data-screen-label="11 Console: Create grant">
+    <div class="accent-bar"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 22px;">STEP 2 — CREATE GRANT</div>
+      <h1 class="h-title" style="max-width: 1500px;">Navigate to your license & create a grant</h1>
+      <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 20px;">License Manager → Granted Licenses → select your license → click <strong>Create grant</strong>.</p>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; top: 440px; bottom: 73px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; align-items: center;">
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <p class="body-sm" style="color: var(--aws-gray-550); text-align: center;">Granted Licenses list</p>
+        <img src="assets/screenshots/Granted-licenses-AWS-License-Manager-us-east-1-2026-06-26_03_49_PM.png" style="width: 100%; border-radius: 12px; border: 2px solid var(--aws-gray-250); box-shadow: 0 4px 24px rgba(0,0,0,0.08);" alt="Granted Licenses list">
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <p class="body-sm" style="color: var(--aws-gray-550); text-align: center;">License overview → Create grant</p>
+        <img src="assets/screenshots/Granted-license-details-AWS-License-Manager-us-east-1-2026-06-26_04_33_PM.png" style="width: 100%; border-radius: 12px; border: 2px solid var(--aws-gray-250); box-shadow: 0 4px 24px rgba(0,0,0,0.08);" alt="License overview with Create grant button">
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <p class="body-sm" style="color: var(--aws-gray-550); text-align: center;">Create grant form</p>
+        <img src="assets/screenshots/Create-grant-AWS-License-Manager-us-east-1-2026-06-26_03_53_PM.png" style="width: 100%; border-radius: 12px; border: 2px solid var(--aws-gray-250); box-shadow: 0 4px 24px rgba(0,0,0,0.08);" alt="Create grant form">
+      </div>
+    </div>
+    <div class="slide-no">11 / 19</div>
+  </section>
+
+  <!-- 11. STEP 2: GRANT TARGET OPTIONS -->
+  <section class="slide" data-screen-label="12 Console: Grant target options">
+    <div class="accent-bar"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 22px;">STEP 2 — CREATE GRANT (TARGET)</div>
+      <h1 class="h-title" style="max-width: 1500px;">Three grant target options</h1>
+      <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 20px;">The grant form accepts an AWS account ID, Organization ID, <em>or</em> Organizational Unit ID — giving you flexibility in scope.</p>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; top: 440px; bottom: 200px; display: grid; grid-template-columns: 3fr 2fr; gap: 48px; align-items: start;">
+      <div style="height: 100%; overflow: hidden; border-radius: 12px; border: 2px solid var(--aws-purple-300); box-shadow: 0 4px 24px rgba(0,0,0,0.08);">
+        <img src="assets/screenshots/Create-grant-AWS-License-Manager-us-east-1-2026-06-26_03_53_PM.png" style="width: 180%; margin-left: -10%; margin-top: -8%; transform-origin: top left;" alt="Create grant form highlighting target field">
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 28px; padding-top: 16px;">
+        <div style="display: flex; gap: 16px; align-items: start;">
+          <div class="console-step-num" style="width: 36px; height: 36px; font-size: 14px; flex-shrink: 0;">A</div>
+          <div>
+            <div class="body-md" style="font-weight: 500;">AWS Account ID</div>
+            <div class="body-sm" style="color: var(--aws-gray-600);">Target a single account — recipient must accept + activate</div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 16px; align-items: start;">
+          <div class="console-step-num" style="width: 36px; height: 36px; font-size: 14px; flex-shrink: 0;">B</div>
+          <div>
+            <div class="body-md" style="font-weight: 500;">AWS Organization ID</div>
+            <div class="body-sm" style="color: var(--aws-gray-600);">Covers all member accounts — new accounts auto-inherit</div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 16px; align-items: start;">
+          <div class="console-step-num" style="width: 36px; height: 36px; font-size: 14px; flex-shrink: 0;">C</div>
+          <div>
+            <div class="body-md" style="font-weight: 500;">AWS Organizational Unit ID</div>
+            <div class="body-sm" style="color: var(--aws-gray-600);">Scope to a specific OU — balances broad coverage with control</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; bottom: 73px;">
+      <div class="gotcha-box">
+        <div class="gotcha-icon">💡</div>
+        <div class="gotcha-text"><strong>Tip:</strong> Org-wide grants are simplest for most customers — new accounts automatically get access. Use OU-level grants for segmented rollouts (e.g. production OU only).</div>
+      </div>
+    </div>
+    <div class="slide-no">12 / 19</div>
+  </section>
+
+  <!-- 12. STEP 2: FILL FORM, LINK ORGS & GRANT CREATED -->
+  <section class="slide" data-screen-label="13 Console: Fill form and grant created">
+    <div class="accent-bar"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 22px;">STEP 2 — CREATE GRANT (CONT.)</div>
+      <h1 class="h-title" style="max-width: 1500px;">Fill in the Org ID & create</h1>
+      <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 20px;">Enter your Organization ID (find it in AWS Organizations), click Create. First time, you'll see a prompt to link your Organizations accounts.</p>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; top: 440px; bottom: 160px; display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; align-items: center;">
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <p class="body-sm" style="color: var(--aws-gray-550); text-align: center;">Find Org ID in Organizations</p>
+        <img src="assets/screenshots/AWS-accounts-AWS-Organizations-Global-2026-06-26_03_55_PM.png" style="width: 100%; border-radius: 12px; border: 2px solid var(--aws-gray-250); box-shadow: 0 4px 24px rgba(0,0,0,0.08);" alt="AWS Organizations Org ID">
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <p class="body-sm" style="color: var(--aws-gray-550); text-align: center;">Fill in grant name + Org ID</p>
+        <img src="assets/screenshots/Create-grant-AWS-License-Manager-us-east-1-2026-06-26_03_56_PM.png" style="width: 100%; border-radius: 12px; border: 2px solid var(--aws-gray-250); box-shadow: 0 4px 24px rgba(0,0,0,0.08);" alt="Create grant filled">
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <p class="body-sm" style="color: var(--aws-gray-550); text-align: center;">Link Organizations (first time)</p>
+        <img src="assets/screenshots/Create-grant-AWS-License-Manager-us-east-1-2026-06-26_03_56_PM-x.png" style="width: 100%; border-radius: 12px; border: 2px solid var(--aws-gray-250); box-shadow: 0 4px 24px rgba(0,0,0,0.08);" alt="Link Organizations dialog">
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <p class="body-sm" style="color: var(--aws-gray-550); text-align: center;">Grant created ✓</p>
+        <img src="assets/screenshots/Create-grant-AWS-License-Manager-us-east-1-2026-06-26_03_57_PM.png" style="width: 100%; border-radius: 12px; border: 2px solid var(--aws-gray-250); box-shadow: 0 4px 24px rgba(0,0,0,0.08);" alt="Grant created successfully">
+      </div>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; bottom: 73px;">
+      <div class="gotcha-box">
+        <div class="gotcha-icon">💡</div>
+        <div class="gotcha-text"><strong>Tip:</strong> Find your Organization ID in AWS Organizations → AWS accounts (left sidebar). The "Link Organizations" prompt only appears once — it enables cross-account grant distribution.</div>
+      </div>
+    </div>
+    <div class="slide-no">13 / 19</div>
+  </section>
+
+  <!-- 12. STEP 3: CHECK GRANT STATUS -->
+  <section class="slide" data-screen-label="14 Console: Check grant status">
+    <div class="accent-bar"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 22px;">STEP 3 — CHECK GRANT STATUS</div>
+      <h1 class="h-title" style="max-width: 1500px;">Are grants Active, not just Disabled?</h1>
+      <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 20px; max-width: 1100px;">
+        After creating a grant, it transitions from Processing → <strong>Disabled</strong>. This is expected — grants auto-accept but still need manual activation.
+      </p>
+    </div>
+    <div style="position: absolute; left: 180px; right: 180px; top: 460px; bottom: 160px; display: flex; align-items: center; justify-content: center;">
+      <div style="display: flex; flex-direction: column; gap: 12px; max-width: 900px; width: 100%;">
+        <p class="body-sm" style="color: var(--aws-gray-550); text-align: center;">License details showing grant in Disabled state</p>
+        <img src="assets/screenshots/Granted-license-details-AWS-License-Manager-us-east-1-2026-06-26_03_58_PM.png" style="width: 100%; border-radius: 12px; border: 2px solid var(--aws-rose-200); box-shadow: 0 4px 24px rgba(0,0,0,0.08);" alt="Grant in Disabled state">
+      </div>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; bottom: 73px;">
+      <div class="gotcha-box">
+        <div class="gotcha-icon">⚠️</div>
+        <div class="gotcha-text"><strong>Gotcha:</strong> Grants with "All Features" enabled auto-accept but land in <strong>Disabled</strong> state — they must be explicitly activated before the negotiated rate kicks in.</div>
+      </div>
+    </div>
+    <div class="slide-no">14 / 19</div>
+  </section>
+
+  <!-- 14. STEP 4: ACTIVATE THE GRANT -->
+  <section class="slide" data-screen-label="15 Console: Activate grant">
+    <div class="accent-bar"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 22px;">STEP 4 — ACTIVATE</div>
+      <h1 class="h-title" style="max-width: 1500px;">Activate the grant</h1>
+      <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 20px;">Click into the grant → hit the <strong>Activate</strong> button. Confirm in the dialog.</p>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; top: 440px; bottom: 160px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center;">
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <p class="body-sm" style="color: var(--aws-gray-550); text-align: center;">Grant details — Activate button (top right)</p>
+        <img src="assets/screenshots/Grant-details-AWS-License-Manager-us-east-1-2026-06-26_03_58_PM.png" style="width: 100%; border-radius: 12px; border: 2px solid var(--aws-gray-250); box-shadow: 0 4px 24px rgba(0,0,0,0.08);" alt="Grant details with Activate button">
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <p class="body-sm" style="color: var(--aws-gray-550); text-align: center;">Confirmation dialog</p>
+        <img src="assets/screenshots/Grant-details-AWS-License-Manager-us-east-1-2026-06-26_03_59_PM.png" style="width: 100%; border-radius: 12px; border: 2px solid var(--aws-gray-250); box-shadow: 0 4px 24px rgba(0,0,0,0.08);" alt="Activate grant confirmation">
+      </div>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; bottom: 73px;">
+      <div class="gotcha-box">
+        <div class="gotcha-icon">⚠️</div>
+        <div class="gotcha-text"><strong>Gotcha:</strong> Disabled means public list pricing. If Activate fails, check CloudTrail for AccessDenied on <code>GetLicense</code> or <code>GetLicenseUsage</code>; if none appears, allow console pop-ups and retry.</div>
+      </div>
+    </div>
+    <div class="slide-no">15 / 19</div>
+  </section>
+
+  <!-- 15. STEP 4: WORKFLOW COMPLETED -->
+  <section class="slide" data-screen-label="16 Console: Workflow completed">
+    <div class="accent-bar"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 22px;">STEP 4 — ACTIVATE (RESULT)</div>
+      <h1 class="h-title" style="max-width: 1500px;">Grant activation complete</h1>
+      <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 20px;">After clicking Activate, the grant transitions through Processing → <strong>Workflow completed</strong>. The entitlement is now live.</p>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; top: 440px; bottom: 73px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center;">
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <p class="body-sm" style="color: var(--aws-gray-550); text-align: center;">Status: Processing</p>
+        <img src="assets/screenshots/Granted-license-details-AWS-License-Manager-us-east-1-2026-06-26_03_57_PM.png" style="width: 100%; border-radius: 12px; border: 2px solid var(--aws-gray-250); box-shadow: 0 4px 24px rgba(0,0,0,0.08);" alt="Grant processing">
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <p class="body-sm" style="color: var(--aws-gray-550); text-align: center;">Status: Workflow completed ✓</p>
+        <img src="assets/screenshots/Granted-license-details-AWS-License-Manager-us-east-1-2026-06-26_04_02_PM.png" style="width: 100%; border-radius: 12px; border: 2px solid var(--aws-lime-300); box-shadow: 0 4px 24px rgba(0,0,0,0.08);" alt="Grant workflow completed">
+      </div>
+    </div>
+    <div class="slide-no">16 / 19</div>
+  </section>
+
+  <!-- 16. STEP 5: CONFIRM DISCOUNT FLOWING -->
+  <section class="slide" data-screen-label="17 Console: Confirm discount">
+    <div class="accent-bar"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 22px;">STEP 5 — CONFIRM DISCOUNT</div>
+      <h1 class="h-title" style="max-width: 1500px;">Confirm discount is flowing</h1>
+      <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 20px; max-width: 1200px;">
+        The ultimate confirmation — check that actual billing reflects the negotiated rate.
+      </p>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; top: 480px; bottom: 200px;">
+      <div class="checklist">
+        <div class="check-item">
+          <div class="check-icon">1</div>
+          <div>
+            <div class="body-lg" style="font-weight: 500;">Open AWS Cost Explorer or Billing Console</div>
+            <div class="body-md" style="color: var(--aws-gray-600); margin-top: 8px;">Filter to the member accounts making Bedrock API calls</div>
+          </div>
+        </div>
+        <div class="check-item">
+          <div class="check-icon">2</div>
+          <div>
+            <div class="body-lg" style="font-weight: 500;">Compare billed rate vs. public list rate</div>
+            <div class="body-md" style="color: var(--aws-gray-600); margin-top: 8px;">The per-token rate should match the negotiated MPPO rate, not the standard published price</div>
+          </div>
+        </div>
+        <div class="check-item">
+          <div class="check-icon">3</div>
+          <div>
+            <div class="body-lg" style="font-weight: 500;">Check usage type and line items</div>
+            <div class="body-md" style="color: var(--aws-gray-600); margin-top: 8px;">Look for Marketplace line items vs. standard Bedrock usage — confirms the entitlement path is active</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; bottom: 73px;">
+      <div class="gotcha-box">
+        <div class="gotcha-icon">💡</div>
+        <div class="gotcha-text"><strong>Tip:</strong> Billing data may take 24–48 hours to reflect. Make a test API call and check the next day's Cost Explorer for confirmation.</div>
+      </div>
+    </div>
+    <div class="slide-no">17 / 19</div>
+  </section>
+
+  <!-- 17. FAQ -->
+  <section class="slide" data-screen-label="18 FAQ">
+    <div class="accent-bar"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 22px;">FAQ</div>
+      <h1 class="h-title" style="max-width: 1500px;">Common questions</h1>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; top: 440px; bottom: 120px;">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 56px 96px;">
+        <div class="faq-item">
+          <div class="faq-q">Is a subscription per model?</div>
+          <div class="faq-a">Yes. Each model requires its own Marketplace subscription. Each subscription creates a separate license you can distribute independently.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">What about new accounts?</div>
+          <div class="faq-a">Org-wide grants auto-cover new member accounts. Individual grants require manual creation for each new account.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">Can I revoke access?</div>
+          <div class="faq-a">Yes. Delete the grant anytime - the recipient immediately loses access to invoke the model.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">How long does distribution take?</div>
+          <div class="faq-a">Minutes for individual accounts. Up to several hours for large Organizations with many member accounts.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">Can I share outside my org?</div>
+          <div class="faq-a">No. Managed Entitlements only works within your AWS Organization boundary.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">What about existing subscriptions?</div>
+          <div class="faq-a">Today this supports new subscriptions only (post Oct 30, 2025). Existing subscription support is on the roadmap.</div>
+        </div>
+      </div>
+    </div>
+    <div class="slide-no">18 / 19</div>
+  </section>
+
+  <!-- 18. CALL TO ACTION -->
+  <section class="slide" data-screen-label="19 Automate it">
+    <div class="cover-gradient"></div>
+    <img class="logo-tl" src="assets/aws-logo-gray850.svg" alt="AWS">
+    <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
+      <div class="eyebrow" style="color: var(--aws-purple-700); margin-bottom: 22px;">DON'T DO THIS BY HAND</div>
+      <h1 class="h-title" style="max-width: 1400px;">Automate the whole flow</h1>
+      <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 32px; max-width: 1150px;">
+        An AWS sample that watches for new Marketplace agreements and creates <em>and activates</em> the org-wide grant for you - so the Disabled-by-default trap never costs you money.
+      </p>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; top: 520px; display: flex; gap: 80px; align-items: start;">
+      <div class="cta-list" style="flex: 1; padding-top: 8px;">
+        <div class="cta-item">
+          <div class="cta-dot">1</div>
+          <div>
+            <div class="cta-item-title">Event-driven, hands-off</div>
+            <div class="cta-item-desc">Private offer accepted &rarr; license found &rarr; grant created and activated &rarr; email or Slack notification.</div>
+          </div>
+        </div>
+        <div class="cta-item">
+          <div class="cta-dot">2</div>
+          <div>
+            <div class="cta-item-title">Guardrails built in</div>
+            <div class="cta-item-desc">Seller allow-list in DynamoDB, opt-in auto-accept, org / OU / account grant targeting, legacy grant replacement.</div>
+          </div>
+        </div>
+        <div class="cta-item">
+          <div class="cta-dot">3</div>
+          <div>
+            <div class="cta-item-title">Cheap and quick to deploy</div>
+            <div class="cta-item-desc">Serverless, ~$0/month at rest. CDK v2 into your Organizations management account in us-east-1, with an interactive setup script.</div>
+          </div>
+        </div>
+      </div>
+      <div class="qr-panel">
+        <img src="assets/qr-github-sample.svg" alt="QR code linking to github.com/aws-samples/sample-bedrock-managed-entitlements">
+        <div class="qr-url">github.com/aws-samples/<br>sample-bedrock-managed-entitlements</div>
+      </div>
+    </div>
+    <div class="slide-no">19 / 19</div>
+  </section>
+
+</deck-stage>
+
+</body>
+</html>
