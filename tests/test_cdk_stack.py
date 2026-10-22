@@ -235,6 +235,30 @@ def test_activation_retry_rule_schedule():
     )
 
 
+def test_entitlement_monitor_and_error_alarm():
+    """Daily reconciliation and Lambda failures notify operators."""
+    template = get_template()
+
+    template.has_resource_properties(
+        "AWS::Events::Rule",
+        {
+            "Name": "mppo-entitlement-monitor",
+            "ScheduleExpression": "rate(1 day)",
+            "State": "ENABLED",
+        },
+    )
+    template.has_resource_properties(
+        "AWS::CloudWatch::Alarm",
+        {
+            "AlarmName": "mppo-grants-handler-errors",
+            "MetricName": "Errors",
+            "Namespace": "AWS/Lambda",
+            "Threshold": 1,
+            "TreatMissingData": "notBreaching",
+        },
+    )
+
+
 def test_auto_accept_not_deployed_by_default():
     """Auto-accept Lambda is opt-in and absent when enableAutoAccept is unset."""
     template = get_template()

@@ -40,6 +40,7 @@ resource "aws_lambda_function" "handler" {
       SNS_TOPIC_ARN            = aws_sns_topic.notifications.arn
       ORGANIZATION_ID          = local.organization_id
       HOME_REGION              = "us-east-1"
+      NOTIFICATION_MODE        = local.notification_mode
     }
   }
 
@@ -86,6 +87,7 @@ resource "aws_lambda_function" "auto_accept" {
       SELLER_TABLE_NAME = aws_dynamodb_table.allowed_sellers.name
       SNS_TOPIC_ARN     = aws_sns_topic.notifications.arn
       HOME_REGION       = "us-east-1"
+      NOTIFICATION_MODE = local.notification_mode
     }
   }
 

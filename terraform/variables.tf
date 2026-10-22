@@ -62,6 +62,23 @@ variable "activation_retry_schedule" {
   default     = "rate(6 hours)"
 }
 
+variable "monitor_schedule" {
+  description = "EventBridge schedule expression for reconciling unaccepted offers and inactive or missing grants. Falls back to monitorSchedule in config_path, then rate(1 day)."
+  type        = string
+  default     = null
+}
+
+variable "notification_mode" {
+  description = "Notification volume: exceptions_only sends actionable issues and failures; all also sends routine success messages. Falls back to notifications.mode, then exceptions_only."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.notification_mode == null ? true : contains(["exceptions_only", "all"], var.notification_mode)
+    error_message = "notification_mode must be exceptions_only or all."
+  }
+}
+
 variable "agreement_rule_enabled" {
   description = "Whether the Marketplace agreement rule is ENABLED. Set false while a second deployment (for example the CDK stack) handles the same events, so one agreement is not processed twice."
   type        = bool

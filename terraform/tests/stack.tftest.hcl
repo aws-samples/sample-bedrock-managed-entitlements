@@ -27,6 +27,8 @@ variables {
   slack_channel_id       = null
   enable_auto_accept     = null
   auto_accept_schedule   = null
+  monitor_schedule       = null
+  notification_mode      = null
   agreement_rule_enabled = true
 }
 
@@ -54,7 +56,7 @@ run "defaults_match_cdk_names" {
   }
 
   assert {
-    condition     = aws_cloudwatch_event_rule.agreement_created.name == "mppo-agreement-created" && aws_cloudwatch_event_rule.activation_retry.name == "mppo-grant-activation-retry"
+    condition     = aws_cloudwatch_event_rule.agreement_created.name == "mppo-agreement-created" && aws_cloudwatch_event_rule.activation_retry.name == "mppo-grant-activation-retry" && aws_cloudwatch_event_rule.entitlement_monitor.name == "mppo-entitlement-monitor"
     error_message = "Rule names should match the CDK stack."
   }
 }
@@ -77,7 +79,8 @@ run "handler_configuration" {
       aws_lambda_function.handler.environment[0].variables["ORGANIZATION_ID"] == "o-abc1234567" &&
       aws_lambda_function.handler.environment[0].variables["SELLER_TABLE_NAME"] == "mppo-allowed-sellers" &&
       aws_lambda_function.handler.environment[0].variables["PENDING_GRANT_TABLE_NAME"] == "mppo-pending-grants" &&
-      aws_lambda_function.handler.environment[0].variables["HOME_REGION"] == "us-east-1"
+      aws_lambda_function.handler.environment[0].variables["HOME_REGION"] == "us-east-1" &&
+      aws_lambda_function.handler.environment[0].variables["NOTIFICATION_MODE"] == "exceptions_only"
     )
     error_message = "Handler environment does not match the CDK stack."
   }
@@ -107,6 +110,25 @@ run "eventbridge_rules" {
   assert {
     condition     = aws_cloudwatch_event_rule.activation_retry.schedule_expression == "rate(6 hours)"
     error_message = "Retry rule should run every 6 hours like the CDK stack."
+  }
+
+  assert {
+    condition     = aws_cloudwatch_event_rule.entitlement_monitor.schedule_expression == "rate(1 day)"
+    error_message = "Entitlement reconciliation should run daily by default."
+  }
+
+  assert {
+    condition = jsondecode(aws_cloudwatch_event_target.entitlement_monitor.input) == {
+      source        = "mppo-grants-automation"
+      "detail-type" = "Monitor MPPO Entitlements"
+      detail        = {}
+    }
+    error_message = "Monitor target input must match the payload lambda/handler.py recognises."
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.handler_errors.treat_missing_data == "notBreaching"
+    error_message = "Handler failures should alarm without treating idle periods as failures."
   }
 
   assert {
@@ -164,6 +186,7 @@ run "name_prefix_applies_everywhere" {
       aws_sns_topic.notifications.name == "mppo-tf-grants-notifications",
       aws_cloudwatch_event_rule.agreement_created.name == "mppo-tf-agreement-created",
       aws_cloudwatch_event_rule.activation_retry.name == "mppo-tf-grant-activation-retry",
+      aws_cloudwatch_event_rule.entitlement_monitor.name == "mppo-tf-entitlement-monitor",
       aws_cloudwatch_log_group.handler.name == "/aws/lambda/mppo-tf-grants-handler",
     ])
     error_message = "Every resource name should use name_prefix."

@@ -21,7 +21,8 @@ from botocore.exceptions import ClientError
 from steps.verify_seller import verify_seller
 from steps.discover_license import discover_license
 from steps.create_grant import create_and_activate_grant
-from steps.notify import notify_admins
+from steps.monitor import monitor_entitlements
+from steps.notify import notify_admins, success_notifications_enabled
 from steps.pending_grants import (
     SUCCESS_STATUSES,
     record_pending_grant,
@@ -42,6 +43,7 @@ HOME_REGION = os.environ.get("HOME_REGION", "us-east-1")
 
 RETRY_EVENT_SOURCE = "mppo-grants-automation"
 RETRY_EVENT_DETAIL_TYPE = "Retry Pending MPPO Grant Activations"
+MONITOR_EVENT_DETAIL_TYPE = "Monitor MPPO Entitlements"
 
 
 def lambda_handler(event: dict, context) -> dict:
@@ -78,6 +80,19 @@ def lambda_handler(event: dict, context) -> dict:
             logger.info("Processing scheduled pending grant activation retry")
             return retry_pending_grant_activations(
                 table_name=PENDING_GRANT_TABLE_NAME,
+                home_region=HOME_REGION,
+                topic_arn=SNS_TOPIC_ARN,
+            )
+
+        if (
+            event.get("source") == RETRY_EVENT_SOURCE
+            and event.get("detail-type") == MONITOR_EVENT_DETAIL_TYPE
+        ):
+            logger.info("Processing scheduled entitlement reconciliation")
+            return monitor_entitlements(
+                seller_table_name=SELLER_TABLE_NAME,
+                pending_table_name=PENDING_GRANT_TABLE_NAME,
+                organization_id=ORGANIZATION_ID,
                 home_region=HOME_REGION,
                 topic_arn=SNS_TOPIC_ARN,
             )
@@ -243,7 +258,7 @@ def lambda_handler(event: dict, context) -> dict:
                 replace_legacy_grants=replace_legacy,
             )
 
-        logger.info("Step 4: Sending notification")
+        logger.info("Step 4: Recording outcome")
         final_status = grant_result.get("status", "unknown")
         subject_status = "Pending Activation" if pending_grants else "Created"
         access_message = (
@@ -252,22 +267,23 @@ def lambda_handler(event: dict, context) -> dict:
             if pending_grants else
             f"Access distributed at the negotiated rate."
         )
-        notify_admins(
-            topic_arn=SNS_TOPIC_ARN,
-            subject=f"MPPO Grant {subject_status}: {seller_name} - {product_name}",
-            message=(
-                f"Processed license distribution from {seller_name}.\n\n"
-                f"Agreement ID: {agreement_id}\n"
-                f"Offer ID: {offer_id}\n"
-                f"Intent: {intent}\n"
-                f"Product: {product_name}\n"
-                f"License ARN: {license_arn}\n"
-                f"Grant ARN: {grant_result.get('grant_arn', 'N/A')}\n"
-                f"Grant Status: {final_status}\n"
-                f"Target: {target_desc}\n\n"
-                f"{access_message}"
-            ),
-        )
+        if pending_grants or success_notifications_enabled():
+            notify_admins(
+                topic_arn=SNS_TOPIC_ARN,
+                subject=f"MPPO Grant {subject_status}: {seller_name} - {product_name}",
+                message=(
+                    f"Processed license distribution from {seller_name}.\n\n"
+                    f"Agreement ID: {agreement_id}\n"
+                    f"Offer ID: {offer_id}\n"
+                    f"Intent: {intent}\n"
+                    f"Product: {product_name}\n"
+                    f"License ARN: {license_arn}\n"
+                    f"Grant ARN: {grant_result.get('grant_arn', 'N/A')}\n"
+                    f"Grant Status: {final_status}\n"
+                    f"Target: {target_desc}\n\n"
+                    f"{access_message}"
+                ),
+            )
 
         return {
             "status": "success",

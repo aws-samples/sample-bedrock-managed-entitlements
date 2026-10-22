@@ -161,6 +161,7 @@ Auto-discovers your Organization ID, lists existing licenses, and generates conf
     }
   ],
   "notifications": {
+    "mode": "exceptions_only",
     "emailAddresses": ["admin@example.com"],
     "slackWorkspaceId": "",
     "slackChannelId": ""
@@ -168,11 +169,24 @@ Auto-discovers your Organization ID, lists existing licenses, and generates conf
 }
 ```
 
-`productSkus` and `productNames` are optional filters used by `scripts/backfill_grants.py` to avoid broad issuer-only matches when processing existing licenses.
+`productSkus` and `productNames` are optional for event-driven grants, but
+required for safe scheduled reconciliation and backfill. An issuer name alone
+can match unrelated products.
 
 ### Notifications
 
 **Email** - add addresses to `notifications.emailAddresses`. Subscriptions are created automatically.
+
+`notifications.mode` defaults to `exceptions_only`. This sends one scheduled
+digest when offers remain unaccepted, grants are missing or inactive, or
+configuration cannot be reconciled safely. It also sends execution-failure
+alarms. Set the mode to `all` only if you also want a message for every
+successful acceptance and activation.
+
+AWS Marketplace also sends service-managed buyer notifications. Those emails
+are outside this sample's SNS topic and cannot be suppressed here. Route them
+to a dedicated mailbox or mail rule if they are too noisy; keep this sample's
+exception digest going to an owned operational channel.
 
 **Slack** (via [AWS Chatbot](https://docs.aws.amazon.com/chatbot/latest/adminguide/what-is.html)) - add your Slack workspace and channel IDs:
 
@@ -188,7 +202,9 @@ To find these:
 2. Workspace ID: visible in AWS Chatbot console after authorization
 3. Channel ID: right-click the Slack channel → "Copy link" → the `C01...` segment is the channel ID
 
-When configured, grant creation/activation events and errors are posted directly to your Slack channel.
+When configured, actionable reconciliation findings and errors are posted
+directly to your Slack channel. Routine successes are posted only in `all`
+mode.
 
 **Finding the seller account ID:**
 
@@ -236,7 +252,8 @@ sequenceDiagram
     LF->>LF: Scheduled retry checks pending grants
     LF->>LM: CreateGrantVersion once grant reaches DISABLED
     LM->>ORG: Distribute entitlement to all accounts
-    LF->>SNS: Publish success notification
+    LF->>LF: Daily reconciliation of offers, licences, and grants
+    LF->>SNS: Publish one exception digest when action is needed
 ```
 
 ### Grant Targeting
@@ -451,7 +468,9 @@ This sample deploys infrastructure into **your** AWS account. Under the [AWS Sha
 - Seller identity is matched on **AWS-assigned IDs** (`proposerAccountId` for grants, `sellerProfileId` for auto-accept), never on a seller-supplied display name
 - **Auto-accept** is disabled by default and requires two explicit opt-ins
 - All actions are logged to **CloudTrail** for audit
-- **SNS notifications** provide visibility into every automated action
+- A scheduled reconciliation detects unaccepted offers and missing or inactive grants
+- Lambda error alarms report failures in the automation and the monitor itself
+- SNS defaults to exception-only digests to avoid one email per account and model
 - The Lambda has **no write access** to License Manager beyond grant creation/activation
 
 ---

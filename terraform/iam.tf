@@ -93,6 +93,15 @@ data "aws_iam_policy_document" "handler" {
   }
 
   statement {
+    sid = "MarketplaceDiscoveryRead"
+    actions = [
+      "aws-marketplace:GetOffer",
+      "aws-marketplace:ListPurchaseOptions",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
     sid = "OrganizationsRead"
     actions = [
       "organizations:DescribeOrganization",

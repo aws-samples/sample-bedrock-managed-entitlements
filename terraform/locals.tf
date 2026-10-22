@@ -20,6 +20,8 @@ locals {
 
   enable_auto_accept   = coalesce(var.enable_auto_accept, try(local.config.enableAutoAccept, false), false)
   auto_accept_schedule = coalesce(var.auto_accept_schedule, try(local.config.autoAcceptSchedule, ""), "rate(1 hour)")
+  monitor_schedule     = coalesce(var.monitor_schedule, try(local.config.monitorSchedule, ""), "rate(1 day)")
+  notification_mode    = coalesce(var.notification_mode, try(local.config_notifications.mode, ""), "exceptions_only")
 
   names = {
     seller_table        = "${var.name_prefix}-allowed-sellers"
@@ -30,6 +32,7 @@ locals {
     agreement_rule      = "${var.name_prefix}-agreement-created"
     retry_rule          = "${var.name_prefix}-grant-activation-retry"
     auto_accept_rule    = "${var.name_prefix}-auto-accept-schedule"
+    monitor_rule        = "${var.name_prefix}-entitlement-monitor"
     slack_configuration = "${var.name_prefix}-grants-notifications"
   }
 

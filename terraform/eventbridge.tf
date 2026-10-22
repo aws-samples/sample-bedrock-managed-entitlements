@@ -51,6 +51,32 @@ resource "aws_lambda_permission" "activation_retry" {
   source_arn    = aws_cloudwatch_event_rule.activation_retry.arn
 }
 
+# ─── Entitlement reconciliation ─────────────────────────────────────────────
+resource "aws_cloudwatch_event_rule" "entitlement_monitor" {
+  name                = local.names.monitor_rule
+  description         = "Reconciles unaccepted offers and inactive or missing License Manager grants"
+  schedule_expression = local.monitor_schedule
+}
+
+resource "aws_cloudwatch_event_target" "entitlement_monitor" {
+  rule = aws_cloudwatch_event_rule.entitlement_monitor.name
+  arn  = aws_lambda_function.handler.arn
+
+  input = jsonencode({
+    source        = "mppo-grants-automation"
+    "detail-type" = "Monitor MPPO Entitlements"
+    detail        = {}
+  })
+}
+
+resource "aws_lambda_permission" "entitlement_monitor" {
+  statement_id  = "AllowEntitlementMonitorRule"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.handler.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.entitlement_monitor.arn
+}
+
 # ─── Auto-accept schedule (opt-in) ──────────────────────────────────────────
 resource "aws_cloudwatch_event_rule" "auto_accept" {
   count = local.enable_auto_accept ? 1 : 0

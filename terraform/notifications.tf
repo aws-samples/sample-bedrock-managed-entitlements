@@ -4,6 +4,42 @@ resource "aws_sns_topic" "notifications" {
   kms_master_key_id = var.sns_kms_master_key_id
 }
 
+resource "aws_cloudwatch_metric_alarm" "handler_errors" {
+  alarm_name          = "${local.names.handler}-errors"
+  alarm_description   = "The MPPO grant handler or entitlement monitor failed"
+  namespace           = "AWS/Lambda"
+  metric_name         = "Errors"
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  dimensions = {
+    FunctionName = aws_lambda_function.handler.function_name
+  }
+  alarm_actions = [aws_sns_topic.notifications.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "auto_accept_errors" {
+  count = local.enable_auto_accept ? 1 : 0
+
+  alarm_name          = "${local.names.auto_accept}-errors"
+  alarm_description   = "The MPPO private-offer auto-accept handler failed"
+  namespace           = "AWS/Lambda"
+  metric_name         = "Errors"
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  dimensions = {
+    FunctionName = aws_lambda_function.auto_accept[0].function_name
+  }
+  alarm_actions = [aws_sns_topic.notifications.arn]
+}
+
 resource "aws_sns_topic_subscription" "email" {
   for_each = local.notification_emails
 

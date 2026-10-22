@@ -33,6 +33,11 @@ output "activation_retry_rule_name" {
   value       = aws_cloudwatch_event_rule.activation_retry.name
 }
 
+output "entitlement_monitor_rule_name" {
+  description = "EventBridge rule name for scheduled entitlement reconciliation"
+  value       = aws_cloudwatch_event_rule.entitlement_monitor.name
+}
+
 output "auto_accept_lambda_arn" {
   description = "Auto-accept handler Lambda ARN (null unless auto-accept is enabled)"
   value       = one(aws_lambda_function.auto_accept[*].arn)

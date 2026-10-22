@@ -55,6 +55,8 @@ them. Without the file, set everything through variables. See
 | `enable_auto_accept` | `false` | `enableAutoAccept` |
 | `auto_accept_schedule` | `rate(1 hour)` | `autoAcceptSchedule` |
 | `activation_retry_schedule` | `rate(6 hours)` | – |
+| `monitor_schedule` | `rate(1 day)` | `monitorSchedule` |
+| `notification_mode` | `exceptions_only` | `notifications.mode` |
 | `agreement_rule_enabled` | `true` | – |
 | `log_retention_days` | `14` | – |
 | `sns_kms_master_key_id` | none | – |
@@ -90,7 +92,8 @@ Pass the prefixed names to the scripts, for example
 - DynamoDB tables use the AWS managed KMS key for encryption at rest.
 - The Slack channel role has a `ReadOnlyAccess` guardrail, so the channel
   only receives notifications.
-- `agreement_rule_enabled` and `activation_retry_schedule` can be set.
+- `agreement_rule_enabled`, `activation_retry_schedule`, `monitor_schedule`,
+  and `notification_mode` can be set.
 
 ## Checks
 

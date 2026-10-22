@@ -11,6 +11,8 @@
 # agreement_rule_enabled = true
 
 # notification_emails = ["platform-team@example.com"]
+# notification_mode   = "exceptions_only"
+# monitor_schedule    = "rate(1 day)"
 
 # slack_workspace_id = "T01ABCDEF"
 # slack_channel_id   = "C01ABCDEF"

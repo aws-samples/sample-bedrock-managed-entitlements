@@ -17,6 +17,8 @@ from aws_cdk import (
     RemovalPolicy,
     Stack,
     aws_dynamodb as dynamodb,
+    aws_cloudwatch as cloudwatch,
+    aws_cloudwatch_actions as cloudwatch_actions,
     aws_events as events,
     aws_events_targets as targets,
     aws_iam as iam,
@@ -51,6 +53,9 @@ class MppoGrantsAutomationStack(Stack):
             config = json.load(f)
 
         organization_id = config.get("organizationId", "o-xxxxxxxxxx")
+        notification_mode = config.get("notifications", {}).get(
+            "mode", "exceptions_only"
+        )
 
         # ─── DynamoDB: Seller Allow-List Table ───────────────────────────────
         seller_table = dynamodb.Table(
@@ -133,6 +138,7 @@ class MppoGrantsAutomationStack(Stack):
                 "SNS_TOPIC_ARN": notification_topic.topic_arn,
                 "ORGANIZATION_ID": organization_id,
                 "HOME_REGION": "us-east-1",
+                "NOTIFICATION_MODE": notification_mode,
             },
             log_retention=logs.RetentionDays.TWO_WEEKS,
         )
@@ -158,6 +164,18 @@ class MppoGrantsAutomationStack(Stack):
                     "license-manager:CreateGrantVersion",
                     "license-manager:GetGrant",
                     "license-manager:ListDistributedGrants",
+                ],
+                resources=["*"],
+            )
+        )
+
+        handler.add_to_role_policy(
+            iam.PolicyStatement(
+                sid="MarketplaceDiscoveryRead",
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "aws-marketplace:GetOffer",
+                    "aws-marketplace:ListPurchaseOptions",
                 ],
                 resources=["*"],
             )
@@ -235,6 +253,43 @@ class MppoGrantsAutomationStack(Stack):
             )
         )
 
+        monitor_rule = events.Rule(
+            self,
+            "MppoEntitlementMonitorRule",
+            rule_name="mppo-entitlement-monitor",
+            description=(
+                "Reconciles unaccepted offers and inactive or missing "
+                "License Manager grants"
+            ),
+            schedule=events.Schedule.expression(
+                config.get("monitorSchedule", "rate(1 day)")
+            ),
+        )
+        monitor_rule.add_target(
+            targets.LambdaFunction(
+                handler,
+                event=events.RuleTargetInput.from_object({
+                    "source": "mppo-grants-automation",
+                    "detail-type": "Monitor MPPO Entitlements",
+                    "detail": {},
+                }),
+            )
+        )
+
+        handler_error_alarm = cloudwatch.Alarm(
+            self,
+            "MppoHandlerErrorAlarm",
+            alarm_name="mppo-grants-handler-errors",
+            alarm_description="The MPPO grant handler or entitlement monitor failed",
+            metric=handler.metric_errors(period=Duration.minutes(5)),
+            threshold=1,
+            evaluation_periods=1,
+            treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+        )
+        handler_error_alarm.add_alarm_action(
+            cloudwatch_actions.SnsAction(notification_topic)
+        )
+
         # ─── Auto-Accept Lambda (OPTIONAL — disabled by default) ───────────
         # This Lambda checks for private offers from trusted sellers and
         # auto-accepts them. Only deployed if enableAutoAccept is true.
@@ -262,6 +317,7 @@ class MppoGrantsAutomationStack(Stack):
                     "SELLER_TABLE_NAME": seller_table.table_name,
                     "SNS_TOPIC_ARN": notification_topic.topic_arn,
                     "HOME_REGION": "us-east-1",
+                    "NOTIFICATION_MODE": notification_mode,
                 },
                 log_retention=logs.RetentionDays.TWO_WEEKS,
             )
@@ -309,6 +365,22 @@ class MppoGrantsAutomationStack(Stack):
             )
             auto_accept_rule.add_target(targets.LambdaFunction(auto_accept_handler))
 
+            auto_accept_error_alarm = cloudwatch.Alarm(
+                self,
+                "AutoAcceptErrorAlarm",
+                alarm_name="mppo-auto-accept-handler-errors",
+                alarm_description="The MPPO private-offer auto-accept handler failed",
+                metric=auto_accept_handler.metric_errors(
+                    period=Duration.minutes(5)
+                ),
+                threshold=1,
+                evaluation_periods=1,
+                treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+            )
+            auto_accept_error_alarm.add_alarm_action(
+                cloudwatch_actions.SnsAction(notification_topic)
+            )
+
             cdk.CfnOutput(
                 self, "AutoAcceptLambdaArn",
                 value=auto_accept_handler.function_arn,
@@ -345,4 +417,9 @@ class MppoGrantsAutomationStack(Stack):
             self, "ActivationRetryRuleName",
             value=activation_retry_rule.rule_name,
             description="EventBridge rule name for pending grant activation retries",
+        )
+        cdk.CfnOutput(
+            self, "EntitlementMonitorRuleName",
+            value=monitor_rule.rule_name,
+            description="EventBridge rule name for entitlement reconciliation",
         )
