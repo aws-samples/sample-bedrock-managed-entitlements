@@ -134,6 +134,8 @@ cdk deploy
 cd .. && python scripts/seed_sellers.py --config config/sellers.json
 ```
 
+**Prefer Terraform?** [`terraform/`](terraform/) deploys the same stack from the same `config/sellers.json`. See [docs/terraform.md](docs/terraform.md).
+
 ### Configuration
 
 **Interactive setup (recommended):**
@@ -466,6 +468,7 @@ This sample deploys infrastructure into **your** AWS account. Under the [AWS Sha
 | Marketplace Agreement accept calls | ⚠️ Shape-validated | `CreateAgreementRequest`, `AcceptAgreementRequest` verified against API Reference and IAM policy simulation; not yet exercised against a live unaccepted offer |
 | Lambda handler logic | ✅ Validated | 32 unit/integration tests (moto + fakes) |
 | CDK infrastructure | ✅ Validated | CDK assertion tests, incl. auto-accept Lambda when `enableAutoAccept: true` |
+| Terraform infrastructure | ✅ Validated | `terraform test` plan assertions; live apply, synthetic E2E, and destroy ([report](docs/terraform-e2e-report.md)) |
 
 ### Cost Estimate
 
