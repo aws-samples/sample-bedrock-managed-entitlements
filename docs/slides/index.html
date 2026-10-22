@@ -645,7 +645,7 @@ document.addEventListener('fullscreenchange', () => {
       <h1 class="h-title" style="max-width: 1500px;">Navigate to your license & create a grant</h1>
       <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 20px;">License Manager → Granted Licenses → select your license → click <strong>Create grant</strong>.</p>
     </div>
-    <div style="position: absolute; left: 80px; right: 80px; top: 440px; bottom: 73px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; align-items: center;">
+    <div style="position: absolute; left: 80px; right: 80px; top: 400px; bottom: 320px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; align-items: center;">
       <div style="display: flex; flex-direction: column; gap: 12px;">
         <p class="body-sm" style="color: var(--aws-gray-550); text-align: center;">Granted Licenses list</p>
         <img src="assets/screenshots/Granted-licenses-AWS-License-Manager-us-east-1-2026-06-26_03_49_PM.png" style="width: 100%; border-radius: 12px; border: 2px solid var(--aws-gray-250); box-shadow: 0 4px 24px rgba(0,0,0,0.08);" alt="Granted Licenses list">
@@ -657,6 +657,12 @@ document.addEventListener('fullscreenchange', () => {
       <div style="display: flex; flex-direction: column; gap: 12px;">
         <p class="body-sm" style="color: var(--aws-gray-550); text-align: center;">Create grant form</p>
         <img src="assets/screenshots/Create-grant-AWS-License-Manager-us-east-1-2026-06-26_03_53_PM.png" style="width: 100%; border-radius: 12px; border: 2px solid var(--aws-gray-250); box-shadow: 0 4px 24px rgba(0,0,0,0.08);" alt="Create grant form">
+      </div>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; bottom: 73px;">
+      <div class="gotcha-box">
+        <div class="gotcha-icon">⚠️</div>
+        <div class="gotcha-text"><strong>Running from the org management account?</strong> Your received license may not appear under Granted Licenses. Check the License Manager → Granted Licenses → <strong>My Licenses</strong> tab (self-granted / self-managed licenses), then select the license there and choose <strong>Create grant</strong>. The management account that accepted the offer sees the license under My Licenses rather than Granted Licenses.</div>
       </div>
     </div>
     <div class="slide-no">11 / 19</div>
@@ -777,7 +783,7 @@ document.addEventListener('fullscreenchange', () => {
     <div style="position: absolute; left: 80px; top: 200px; right: 80px;">
       <div class="eyebrow" style="color: var(--aws-gray-550); margin-bottom: 22px;">STEP 4 — ACTIVATE</div>
       <h1 class="h-title" style="max-width: 1500px;">Activate the grant</h1>
-      <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 20px;">Click into the grant → hit the <strong>Activate</strong> button. Confirm in the dialog.</p>
+      <p class="body-lg" style="color: var(--aws-gray-650); margin-top: 20px;">Click into the grant → hit the <strong>Activate</strong> button. Select "yes" in the dialog box and click Activate.</p>
     </div>
     <div style="position: absolute; left: 80px; right: 80px; top: 440px; bottom: 160px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center;">
       <div style="display: flex; flex-direction: column; gap: 12px;">
@@ -855,6 +861,12 @@ document.addEventListener('fullscreenchange', () => {
           </div>
         </div>
       </div>
+    </div>
+    <div style="position: absolute; left: 80px; right: 80px; bottom: 190px;">
+      <p class="body-md" style="color: var(--aws-gray-650);">
+        <strong>Step-by-step verification:</strong> for a detailed walkthrough of confirming the discount in Cost Explorer, see the re:Post article
+        <a href="https://repost.aws/articles/ARttb6s9yGSRyYdFjS18xWRg/how-to-verify-your-amazon-bedrock-marketplace-private-offer-discount-is-applied-using-cost-explorer" style="color: var(--aws-purple-700); text-decoration: underline;">How to verify your Amazon Bedrock Marketplace private offer discount is applied using Cost Explorer</a>.
+      </p>
     </div>
     <div style="position: absolute; left: 80px; right: 80px; bottom: 73px;">
       <div class="gotcha-box">
