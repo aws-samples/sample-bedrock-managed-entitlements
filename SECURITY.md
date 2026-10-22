@@ -2,7 +2,7 @@
 
 ## Vulnerability Reporting
 
-If you discover a security vulnerability in this sample, please report it via [GitHub Issues](https://github.com/wirjo/sample-bedrock-managed-entitlements/issues) or contact the maintainer directly.
+If you discover a security vulnerability in this sample, please report it via [GitHub Issues](https://github.com/aws-samples/sample-bedrock-managed-entitlements/issues) or contact the maintainer directly.
 
 ## Shared Responsibility
 

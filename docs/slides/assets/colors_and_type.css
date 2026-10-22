@@ -11,8 +11,68 @@
    ============================================================= */
 
 /* ---------- FONT FACES ----------
-   Amazon Ember font files are not bundled; the --aws-font-* stacks below
-   fall back to installed Amazon Ember or system fonts. */
+   Amazon Ember is served from CloudFront for GitHub Pages origins; the
+   --aws-font-* stacks below fall back to system fonts elsewhere. */
+@font-face {
+  font-family: "Amazon Ember Display";
+  src: url("https://d2z3n9caq6iz61.cloudfront.net/fonts/amazon-ember/AmazonEmberDisplay_Lt.woff2") format("woff2");
+  font-weight: 300; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Amazon Ember Display";
+  src: url("https://d2z3n9caq6iz61.cloudfront.net/fonts/amazon-ember/AmazonEmberDisplay_LtIt.woff2") format("woff2");
+  font-weight: 300; font-style: italic; font-display: swap;
+}
+@font-face {
+  font-family: "Amazon Ember Display";
+  src: url("https://d2z3n9caq6iz61.cloudfront.net/fonts/amazon-ember/AmazonEmberDisplay_Rg.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Amazon Ember Display";
+  src: url("https://d2z3n9caq6iz61.cloudfront.net/fonts/amazon-ember/AmazonEmberDisplay_RgIt.woff2") format("woff2");
+  font-weight: 400; font-style: italic; font-display: swap;
+}
+@font-face {
+  font-family: "Amazon Ember Display";
+  src: url("https://d2z3n9caq6iz61.cloudfront.net/fonts/amazon-ember/AmazonEmberDisplay_Md.woff2") format("woff2");
+  font-weight: 500; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Amazon Ember Display";
+  src: url("https://d2z3n9caq6iz61.cloudfront.net/fonts/amazon-ember/AmazonEmberDisplay_MdIt.woff2") format("woff2");
+  font-weight: 500; font-style: italic; font-display: swap;
+}
+@font-face {
+  font-family: "Amazon Ember Display";
+  src: url("https://d2z3n9caq6iz61.cloudfront.net/fonts/amazon-ember/AmazonEmberDisplay_Bd.woff2") format("woff2");
+  font-weight: 700; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Amazon Ember Display";
+  src: url("https://d2z3n9caq6iz61.cloudfront.net/fonts/amazon-ember/AmazonEmberDisplay_BdIt.woff2") format("woff2");
+  font-weight: 700; font-style: italic; font-display: swap;
+}
+@font-face {
+  font-family: "Amazon Ember Display";
+  src: url("https://d2z3n9caq6iz61.cloudfront.net/fonts/amazon-ember/AmazonEmberDisplay_He.woff2") format("woff2");
+  font-weight: 800; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Amazon Ember Display";
+  src: url("https://d2z3n9caq6iz61.cloudfront.net/fonts/amazon-ember/AmazonEmberDisplay_HeIt.woff2") format("woff2");
+  font-weight: 800; font-style: italic; font-display: swap;
+}
+@font-face {
+  font-family: "Amazon Ember Mono";
+  src: url("https://d2z3n9caq6iz61.cloudfront.net/fonts/amazon-ember/AmazonEmberMono_Rg.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Amazon Ember Mono";
+  src: url("https://d2z3n9caq6iz61.cloudfront.net/fonts/amazon-ember/AmazonEmberMono_Bd.woff2") format("woff2");
+  font-weight: 700; font-style: normal; font-display: swap;
+}
 
 /* ---------- TOKENS ---------- */
 :root {
