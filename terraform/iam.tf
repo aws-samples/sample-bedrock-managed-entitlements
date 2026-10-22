@@ -115,6 +115,18 @@ data "aws_iam_policy_document" "handler" {
     actions   = ["sts:GetCallerIdentity"]
     resources = ["*"]
   }
+
+  statement {
+    sid       = "PublishMonitorHeartbeat"
+    actions   = ["cloudwatch:PutMetricData"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "cloudwatch:namespace"
+      values   = ["MPPO/Entitlements"]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "handler" {

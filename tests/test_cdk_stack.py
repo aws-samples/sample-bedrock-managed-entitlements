@@ -257,6 +257,18 @@ def test_entitlement_monitor_and_error_alarm():
             "TreatMissingData": "notBreaching",
         },
     )
+    template.has_resource_properties(
+        "AWS::CloudWatch::Alarm",
+        {
+            "AlarmName": "mppo-grants-handler-monitor-heartbeat-missing",
+            "MetricName": "ReconciliationCompleted",
+            "Namespace": "MPPO/Entitlements",
+            "ComparisonOperator": "LessThanThreshold",
+            "EvaluationPeriods": 2,
+            "DatapointsToAlarm": 2,
+            "TreatMissingData": "breaching",
+        },
+    )
 
 
 def test_auto_accept_not_deployed_by_default():

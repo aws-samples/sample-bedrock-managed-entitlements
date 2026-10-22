@@ -20,6 +20,7 @@ def monitor_entitlements(
     organization_id: str,
     home_region: str,
     topic_arn: str,
+    deployment_name: str,
 ) -> dict:
     """Find offers awaiting acceptance and licenses without active grants."""
     dynamodb = boto3.resource("dynamodb", region_name=home_region)
@@ -68,6 +69,8 @@ def monitor_entitlements(
     else:
         logger.info("Entitlement reconciliation completed with no issues")
 
+    _emit_heartbeat(home_region, deployment_name)
+
     return {
         "status": "issues_found" if issues else "healthy",
         "sellersChecked": len(sellers),
@@ -75,6 +78,23 @@ def monitor_entitlements(
         "pendingActivations": len(pending),
         "issues": len(issues),
     }
+
+
+def _emit_heartbeat(home_region: str, deployment_name: str) -> None:
+    """Record successful completion so a dead-man alarm can detect missed runs."""
+    boto3.client("cloudwatch", region_name=home_region).put_metric_data(
+        Namespace="MPPO/Entitlements",
+        MetricData=[
+            {
+                "MetricName": "ReconciliationCompleted",
+                "Dimensions": [
+                    {"Name": "Deployment", "Value": deployment_name},
+                ],
+                "Value": 1,
+                "Unit": "Count",
+            }
+        ],
+    )
 
 
 def _find_issues(

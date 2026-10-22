@@ -40,6 +40,7 @@ PENDING_GRANT_TABLE_NAME = os.environ.get(
 SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN", "")
 ORGANIZATION_ID = os.environ.get("ORGANIZATION_ID", "")
 HOME_REGION = os.environ.get("HOME_REGION", "us-east-1")
+DEPLOYMENT_NAME = os.environ.get("DEPLOYMENT_NAME", "mppo")
 
 RETRY_EVENT_SOURCE = "mppo-grants-automation"
 RETRY_EVENT_DETAIL_TYPE = "Retry Pending MPPO Grant Activations"
@@ -82,6 +83,7 @@ def lambda_handler(event: dict, context) -> dict:
                 table_name=PENDING_GRANT_TABLE_NAME,
                 home_region=HOME_REGION,
                 topic_arn=SNS_TOPIC_ARN,
+                deployment_name=DEPLOYMENT_NAME,
             )
 
         if (

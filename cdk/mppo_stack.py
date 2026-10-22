@@ -139,6 +139,7 @@ class MppoGrantsAutomationStack(Stack):
                 "ORGANIZATION_ID": organization_id,
                 "HOME_REGION": "us-east-1",
                 "NOTIFICATION_MODE": notification_mode,
+                "DEPLOYMENT_NAME": "mppo",
             },
             log_retention=logs.RetentionDays.TWO_WEEKS,
         )
@@ -178,6 +179,20 @@ class MppoGrantsAutomationStack(Stack):
                     "aws-marketplace:ListPurchaseOptions",
                 ],
                 resources=["*"],
+            )
+        )
+
+        handler.add_to_role_policy(
+            iam.PolicyStatement(
+                sid="PublishMonitorHeartbeat",
+                effect=iam.Effect.ALLOW,
+                actions=["cloudwatch:PutMetricData"],
+                resources=["*"],
+                conditions={
+                    "StringEquals": {
+                        "cloudwatch:namespace": "MPPO/Entitlements"
+                    }
+                },
             )
         )
 
@@ -287,6 +302,34 @@ class MppoGrantsAutomationStack(Stack):
             treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
         )
         handler_error_alarm.add_alarm_action(
+            cloudwatch_actions.SnsAction(notification_topic)
+        )
+
+        heartbeat_metric = cloudwatch.Metric(
+            namespace="MPPO/Entitlements",
+            metric_name="ReconciliationCompleted",
+            dimensions_map={"Deployment": "mppo"},
+            statistic="Sum",
+            period=Duration.days(1),
+        )
+        heartbeat_alarm = cloudwatch.Alarm(
+            self,
+            "MppoMonitorHeartbeatAlarm",
+            alarm_name="mppo-grants-handler-monitor-heartbeat-missing",
+            alarm_description=(
+                "The scheduled MPPO entitlement reconciliation has not "
+                "completed for two daily periods"
+            ),
+            metric=heartbeat_metric,
+            threshold=1,
+            comparison_operator=(
+                cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD
+            ),
+            evaluation_periods=2,
+            datapoints_to_alarm=2,
+            treat_missing_data=cloudwatch.TreatMissingData.BREACHING,
+        )
+        heartbeat_alarm.add_alarm_action(
             cloudwatch_actions.SnsAction(notification_topic)
         )
 

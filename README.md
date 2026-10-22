@@ -180,8 +180,9 @@ can match unrelated products.
 `notifications.mode` defaults to `exceptions_only`. This sends one scheduled
 digest when offers remain unaccepted, grants are missing or inactive, or
 configuration cannot be reconciled safely. It also sends execution-failure
-alarms. Set the mode to `all` only if you also want a message for every
-successful acceptance and activation.
+alarms and a dead-man alarm if reconciliation stops completing. Set the mode
+to `all` only if you also want a message for every successful acceptance and
+activation.
 
 AWS Marketplace also sends service-managed buyer notifications. Those emails
 are outside this sample's SNS topic and cannot be suppressed here. Route them
@@ -469,7 +470,7 @@ This sample deploys infrastructure into **your** AWS account. Under the [AWS Sha
 - **Auto-accept** is disabled by default and requires two explicit opt-ins
 - All actions are logged to **CloudTrail** for audit
 - A scheduled reconciliation detects unaccepted offers and missing or inactive grants
-- Lambda error alarms report failures in the automation and the monitor itself
+- Lambda error and heartbeat alarms report failed or missing monitor runs
 - SNS defaults to exception-only digests to avoid one email per account and model
 - The Lambda has **no write access** to License Manager beyond grant creation/activation
 

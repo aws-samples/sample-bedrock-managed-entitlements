@@ -94,6 +94,8 @@ Pass the prefixed names to the scripts, for example
   only receives notifications.
 - `agreement_rule_enabled`, `activation_retry_schedule`, `monitor_schedule`,
   and `notification_mode` can be set.
+- A heartbeat metric is emitted after each successful reconciliation. The SNS
+  alarm fires after two daily periods without a completed run.
 
 ## Checks
 

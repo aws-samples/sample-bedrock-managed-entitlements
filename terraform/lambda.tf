@@ -41,6 +41,7 @@ resource "aws_lambda_function" "handler" {
       ORGANIZATION_ID          = local.organization_id
       HOME_REGION              = "us-east-1"
       NOTIFICATION_MODE        = local.notification_mode
+      DEPLOYMENT_NAME          = var.name_prefix
     }
   }
 

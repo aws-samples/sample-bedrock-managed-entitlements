@@ -21,6 +21,24 @@ resource "aws_cloudwatch_metric_alarm" "handler_errors" {
   alarm_actions = [aws_sns_topic.notifications.arn]
 }
 
+resource "aws_cloudwatch_metric_alarm" "monitor_heartbeat_missing" {
+  alarm_name          = "${local.names.handler}-monitor-heartbeat-missing"
+  alarm_description   = "The scheduled MPPO entitlement reconciliation has not completed for two daily periods"
+  namespace           = "MPPO/Entitlements"
+  metric_name         = "ReconciliationCompleted"
+  statistic           = "Sum"
+  period              = 86400
+  evaluation_periods  = 2
+  datapoints_to_alarm = 2
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
+  dimensions = {
+    Deployment = var.name_prefix
+  }
+  alarm_actions = [aws_sns_topic.notifications.arn]
+}
+
 resource "aws_cloudwatch_metric_alarm" "auto_accept_errors" {
   count = local.enable_auto_accept ? 1 : 0
 

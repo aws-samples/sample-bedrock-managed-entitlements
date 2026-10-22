@@ -80,7 +80,8 @@ run "handler_configuration" {
       aws_lambda_function.handler.environment[0].variables["SELLER_TABLE_NAME"] == "mppo-allowed-sellers" &&
       aws_lambda_function.handler.environment[0].variables["PENDING_GRANT_TABLE_NAME"] == "mppo-pending-grants" &&
       aws_lambda_function.handler.environment[0].variables["HOME_REGION"] == "us-east-1" &&
-      aws_lambda_function.handler.environment[0].variables["NOTIFICATION_MODE"] == "exceptions_only"
+      aws_lambda_function.handler.environment[0].variables["NOTIFICATION_MODE"] == "exceptions_only" &&
+      aws_lambda_function.handler.environment[0].variables["DEPLOYMENT_NAME"] == "mppo"
     )
     error_message = "Handler environment does not match the CDK stack."
   }
@@ -129,6 +130,16 @@ run "eventbridge_rules" {
   assert {
     condition     = aws_cloudwatch_metric_alarm.handler_errors.treat_missing_data == "notBreaching"
     error_message = "Handler failures should alarm without treating idle periods as failures."
+  }
+
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.monitor_heartbeat_missing.metric_name == "ReconciliationCompleted" &&
+      aws_cloudwatch_metric_alarm.monitor_heartbeat_missing.evaluation_periods == 2 &&
+      aws_cloudwatch_metric_alarm.monitor_heartbeat_missing.datapoints_to_alarm == 2 &&
+      aws_cloudwatch_metric_alarm.monitor_heartbeat_missing.treat_missing_data == "breaching"
+    )
+    error_message = "A dead-man alarm should detect when daily reconciliation stops completing."
   }
 
   assert {

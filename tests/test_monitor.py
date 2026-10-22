@@ -2,10 +2,11 @@
 
 import os
 import sys
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lambda"))
 
-from steps.monitor import _find_issues
+from steps.monitor import _emit_heartbeat, _find_issues
 
 
 class FakeLicenseManager:
@@ -112,3 +113,21 @@ def test_monitor_reports_pending_activation_and_unsafe_config():
     assert any("grant-test" in issue and "not active" in issue for issue in issues)
     assert any("sellerProfileId is missing" in issue for issue in issues)
     assert any("cannot be safely reconciled" in issue for issue in issues)
+
+
+def test_monitor_heartbeat_uses_deployment_dimension():
+    cloudwatch = MagicMock()
+    with patch("steps.monitor.boto3.client", return_value=cloudwatch):
+        _emit_heartbeat("us-east-1", "mppo-test")
+
+    cloudwatch.put_metric_data.assert_called_once_with(
+        Namespace="MPPO/Entitlements",
+        MetricData=[{
+            "MetricName": "ReconciliationCompleted",
+            "Dimensions": [
+                {"Name": "Deployment", "Value": "mppo-test"},
+            ],
+            "Value": 1,
+            "Unit": "Count",
+        }],
+    )
