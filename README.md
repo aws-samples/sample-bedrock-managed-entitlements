@@ -29,7 +29,23 @@ Even when you manually distribute grants via AWS License Manager, those grants l
 
 [Managed entitlements for Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/managed-entitlements.html) solves the distribution problem: subscribe once, create a single grant targeting your Organization ID, and every member account inherits access automatically.
 
-This sample automates the grant distribution step so you never have to manually create or activate grants again:
+This repo has **two independent ways** to create and activate that grant. Pick one:
+
+| | [`lightweight/`](lightweight/) | Full automation (below) |
+|---|---|---|
+| **What it is** | One script, run once | EventBridge + Lambda + DynamoDB, deployed with AWS CDK or Terraform |
+| **Setup** | None — clone and run | Config file + `cdk deploy` or `terraform apply` |
+| **Scope** | Bedrock-matching received licenses (no seller allow-list) | Only sellers in your allow-list |
+| **Reacts to new offers automatically?** | No — re-run manually | Yes |
+| **Choose this if…** | You want the fastest fix, no infra, and trust the Bedrock-matching licenses currently in `ListReceivedLicenses` | You want ongoing, hands-off automation with per-seller control |
+
+→ **Want the lightweight script?** Go straight to [`lightweight/README.md`](lightweight/README.md) — nothing else in this repo is required.
+
+→ **Want the full automation?** Keep reading below.
+
+### Full automation
+
+Deployed with AWS CDK or Terraform, the automation handles grant distribution so you never have to manually create or activate grants again:
 
 1. **Listens** for new Marketplace agreement events via Amazon EventBridge
 2. **Verifies** the seller is in your allow-list
@@ -47,22 +63,6 @@ See [Architecture](docs/architecture.md#how-it-works) for the full flow.
 - **The allow-list matches seller account IDs only.** An allow-listed seller that also sells SaaS triggers a false-positive `License Not Found` alert when you accept its SaaS offer.
 
 See [Scope & Limitations](docs/architecture.md#scope--limitations) for details.
-
-## Choose Your Path
-
-This repo has **two independent ways** to fix the Disabled→Active grant problem. Pick one:
-
-| | [`lightweight/`](lightweight/) | Full automation (below) |
-|---|---|---|
-| **What it is** | One script, run once | EventBridge + Lambda + DynamoDB, deployed with AWS CDK or Terraform |
-| **Setup** | None — clone and run | Config file + `cdk deploy` or `terraform apply` |
-| **Scope** | Bedrock-matching received licenses (no seller allow-list) | Only sellers in your allow-list |
-| **Reacts to new offers automatically?** | No — re-run manually | Yes |
-| **Choose this if…** | You want the fastest fix, no infra, and trust the Bedrock-matching licenses currently in `ListReceivedLicenses` | You want ongoing, hands-off automation with per-seller control |
-
-→ **Want the lightweight script?** Go straight to [`lightweight/README.md`](lightweight/README.md) — nothing else in this repo is required.
-
-→ **Want the full automation?** Keep reading below.
 
 ## Quickstart
 

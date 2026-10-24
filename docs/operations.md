@@ -27,7 +27,7 @@ python3 scripts/backfill_grants.py \
   --confirm-account-id 123456789012
 ```
 
-**Lightweight, no config file:** if you don't want to maintain `config/sellers.json` at all — e.g. a one-off bootstrap where you're comfortable distributing every Bedrock-matching received license — use the standalone script in [`lightweight/`](../lightweight/) instead of anything in this section. See [Choose Your Path](../README.md#choose-your-path) and [`lightweight/README.md`](../lightweight/README.md) for full usage; it doesn't require anything else in this repo.
+**Lightweight, no config file:** if you don't want to maintain `config/sellers.json` at all — e.g. a one-off bootstrap where you're comfortable distributing every Bedrock-matching received license — use the standalone script in [`lightweight/`](../lightweight/) instead of anything in this section. See [Solution](../README.md#solution) and [`lightweight/README.md`](../lightweight/README.md) for full usage; it doesn't require anything else in this repo.
 
 ## Legacy Offer Cleanup
 
