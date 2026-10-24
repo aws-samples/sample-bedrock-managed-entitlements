@@ -1,8 +1,8 @@
 # Automate model subscriptions with managed entitlements for Amazon Bedrock
 
-[![Deploy with AWS CDK](https://img.shields.io/badge/AWS_CDK-deploy-FF9900)](#deploy-with-aws-cdk)
-[![Deploy with Terraform](https://img.shields.io/badge/Terraform-deploy-844FBA?logo=terraform&logoColor=white)](#deploy-with-terraform)
-[![View the slides](https://img.shields.io/badge/Slides-view_the_deck-232F3E?logo=googleslides&logoColor=white)](https://aws-samples.github.io/sample-bedrock-managed-entitlements/slides/)
+[![Deploy with AWS CDK](https://img.shields.io/badge/AWS_CDK-deploy-FF9900?style=flat-square)](#deploy-with-aws-cdk)
+[![Deploy with Terraform](https://img.shields.io/badge/Terraform-deploy-844FBA?logo=terraform&logoColor=white&style=flat-square)](#deploy-with-terraform)
+[![View the slides](https://img.shields.io/badge/Slides-view_the_deck-232F3E?logo=googleslides&logoColor=white&style=flat-square)](https://aws-samples.github.io/sample-bedrock-managed-entitlements/slides/)
 
 A sample implementation that automates the distribution of [managed entitlements for Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/managed-entitlements.html) across your AWS Organization. Deploy this in your management account to automatically create and activate License Manager grants whenever a new Marketplace private offer is accepted - eliminating manual per-account grant management.
 
