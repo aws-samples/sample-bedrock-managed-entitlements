@@ -416,7 +416,7 @@ See [`scripts/README.md`](scripts/README.md) for full usage.
 ### Testing Without Live Offers
 
 ```bash
-# Unit tests (32 passing - mocked AWS services)
+# Unit tests (mocked AWS services)
 pip install -r requirements-dev.txt && pytest tests/ -v
 
 # Terraform plan assertions (offline, mocked AWS provider)
@@ -530,9 +530,9 @@ This sample deploys infrastructure into **your** AWS account. Under the [AWS Sha
 | License Manager API calls | ✅ Validated | `CreateGrant`, `CreateGrantVersion` verified against [API Reference](https://docs.aws.amazon.com/license-manager/latest/APIReference/); grant activation live-tested against an ISV Partner private offer |
 | Marketplace Discovery API calls | ✅ Validated | `ListPurchaseOptions`, `GetOffer`, `GetOfferTerms` live-tested against the real API (params, IAM permissions) |
 | Marketplace Agreement accept calls | ⚠️ Shape-validated | `CreateAgreementRequest`, `AcceptAgreementRequest` verified against API Reference and IAM policy simulation; not yet exercised against a live unaccepted offer |
-| Lambda handler logic | ✅ Validated | 32 unit/integration tests (moto + fakes) |
+| Lambda handler logic | ✅ Validated | Unit and integration tests (moto + fakes) |
 | CDK infrastructure | ✅ Validated | CDK assertion tests, incl. auto-accept Lambda when `enableAutoAccept: true` |
-| Terraform infrastructure | ✅ Validated | `terraform test` plan assertions; live apply, synthetic E2E, and destroy |
+| Terraform infrastructure | ✅ Validated | Offline `terraform test` plan assertions and checkov; live apply, synthetic E2E, and destroy of the core stack. The entitlement monitor and its alarms have not been live-tested yet |
 
 ### Cost Estimate
 
