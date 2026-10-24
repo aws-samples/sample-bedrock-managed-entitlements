@@ -109,8 +109,7 @@ checkov -d . --framework terraform
 
 `terraform test` runs plan-only assertions that mirror
 `tests/test_cdk_stack.py`. Each checkov skip is commented inline with its
-reason, which in most cases is matching the CDK stack. The live run of this
-module is recorded in [terraform-e2e-report.md](terraform-e2e-report.md).
+reason, which in most cases is matching the CDK stack.
 
 ## Tear down
 
