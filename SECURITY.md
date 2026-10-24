@@ -6,7 +6,7 @@ If you discover a security vulnerability in this sample, please report it via [G
 
 ## Shared Responsibility
 
-This is a sample implementation. You are responsible for reviewing, adapting, and securing it for your environment. See the [Security section in README](README.md#security) for the full shared responsibility breakdown.
+This is a sample implementation. You are responsible for reviewing, adapting, and securing it for your environment. See [docs/security.md](docs/security.md) for the full shared responsibility breakdown.
 
 ## Security Scan Results
 

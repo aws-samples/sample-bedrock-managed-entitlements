@@ -85,12 +85,15 @@ Pass the prefixed names to the scripts, for example
 
 ## Differences from the CDK stack
 
+- CDK keeps state in a CloudFormation stack. Terraform uses local state
+  unless you configure a backend (see [Deploy](#deploy)).
 - Log groups are Terraform resources with retention set up front, instead of
   the CDK log-retention custom resource, and `terraform destroy` removes them.
 - Each Lambda role may write only to its own log group, rather than having
   `AWSLambdaBasicExecutionRole`. The other IAM statements match the CDK stack.
   DynamoDB stream actions are left out because the tables have no streams.
-- DynamoDB tables use the AWS managed KMS key for encryption at rest.
+- DynamoDB tables use the AWS managed KMS key for encryption at rest. CDK
+  uses the default AWS owned key.
 - The Slack channel role has a `ReadOnlyAccess` guardrail, so the channel
   only receives notifications.
 - `name_prefix`, `agreement_rule_enabled`, and `activation_retry_schedule`
