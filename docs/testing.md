@@ -47,4 +47,4 @@ python scripts/e2e_validate.py --org-id o-xxxxxxxxxx --seller-account 4444555566
 | Marketplace Agreement accept calls | ⚠️ Shape-validated | `CreateAgreementRequest`, `AcceptAgreementRequest` verified against API Reference and IAM policy simulation; not yet exercised against a live unaccepted offer |
 | Lambda handler logic | ✅ Validated | Unit and integration tests (moto + fakes) |
 | CDK infrastructure | ✅ Validated | CDK assertion tests, incl. auto-accept Lambda when `enableAutoAccept: true` |
-| Terraform infrastructure | ✅ Validated | Offline `terraform test` plan assertions and checkov; live apply, synthetic E2E, and destroy of the core stack. The entitlement monitor and its alarms have not been live-tested yet |
+| Terraform infrastructure | ✅ Validated | Offline `terraform test` plan assertions and checkov; live apply of the full stack with a synthetic seller, including the entitlement monitor: monitor and retry invocations with their scheduled inputs, the reconciliation heartbeat metric, error and heartbeat alarms wired to the SNS topic, and a clean destroy |
