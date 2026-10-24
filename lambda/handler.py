@@ -83,7 +83,6 @@ def lambda_handler(event: dict, context) -> dict:
                 table_name=PENDING_GRANT_TABLE_NAME,
                 home_region=HOME_REGION,
                 topic_arn=SNS_TOPIC_ARN,
-                deployment_name=DEPLOYMENT_NAME,
             )
 
         if (
@@ -97,6 +96,7 @@ def lambda_handler(event: dict, context) -> dict:
                 organization_id=ORGANIZATION_ID,
                 home_region=HOME_REGION,
                 topic_arn=SNS_TOPIC_ARN,
+                deployment_name=DEPLOYMENT_NAME,
             )
 
         # Parse the event

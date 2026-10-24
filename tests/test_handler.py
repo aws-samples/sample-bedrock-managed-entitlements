@@ -164,3 +164,67 @@ def test_handler_no_proposer():
 
     assert result["status"] == "skipped"
     assert result["reason"] == "no_proposer_account"
+
+
+# The exact target Inputs the scheduled EventBridge rules send (cdk/mppo_stack.py
+# and terraform/eventbridge.tf). autospec=True makes a keyword-argument mismatch
+# between the dispatch call and the step function raise, as it would in Lambda.
+RETRY_RULE_INPUT = {
+    "source": "mppo-grants-automation",
+    "detail-type": "Retry Pending MPPO Grant Activations",
+    "detail": {},
+}
+MONITOR_RULE_INPUT = {
+    "source": "mppo-grants-automation",
+    "detail-type": "Monitor MPPO Entitlements",
+    "detail": {},
+}
+
+
+def test_retry_rule_input_dispatches_to_retry_with_matching_signature():
+    """The retry rule's Input reaches retry_pending_grant_activations intact."""
+    import handler
+
+    with patch("handler.retry_pending_grant_activations", autospec=True) as retry, \
+            patch("handler.monitor_entitlements", autospec=True) as monitor, \
+            patch("handler.notify_admins", autospec=True):
+        result = handler.lambda_handler(dict(RETRY_RULE_INPUT), None)
+
+    retry.assert_called_once_with(
+        table_name=handler.PENDING_GRANT_TABLE_NAME,
+        home_region=handler.HOME_REGION,
+        topic_arn=handler.SNS_TOPIC_ARN,
+    )
+    monitor.assert_not_called()
+    assert result is retry.return_value
+
+
+def test_monitor_rule_input_dispatches_to_monitor_with_matching_signature():
+    """The monitor rule's Input reaches monitor_entitlements with the heartbeat name."""
+    import handler
+
+    with patch("handler.monitor_entitlements", autospec=True) as monitor, \
+            patch("handler.retry_pending_grant_activations", autospec=True) as retry, \
+            patch("handler.notify_admins", autospec=True):
+        result = handler.lambda_handler(dict(MONITOR_RULE_INPUT), None)
+
+    monitor.assert_called_once_with(
+        seller_table_name=handler.SELLER_TABLE_NAME,
+        pending_table_name=handler.PENDING_GRANT_TABLE_NAME,
+        organization_id=handler.ORGANIZATION_ID,
+        home_region=handler.HOME_REGION,
+        topic_arn=handler.SNS_TOPIC_ARN,
+        deployment_name=handler.DEPLOYMENT_NAME,
+    )
+    retry.assert_not_called()
+    assert result is monitor.return_value
+
+
+def test_rule_inputs_match_handler_dispatch_constants():
+    """The scheduled payloads use the source and detail-types the handler checks."""
+    import handler
+
+    assert RETRY_RULE_INPUT["source"] == handler.RETRY_EVENT_SOURCE
+    assert RETRY_RULE_INPUT["detail-type"] == handler.RETRY_EVENT_DETAIL_TYPE
+    assert MONITOR_RULE_INPUT["source"] == handler.RETRY_EVENT_SOURCE
+    assert MONITOR_RULE_INPUT["detail-type"] == handler.MONITOR_EVENT_DETAIL_TYPE
