@@ -2,6 +2,8 @@
 
 A sample implementation that automates the distribution of [managed entitlements for Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/managed-entitlements.html) across your AWS Organization. Deploy this in your management account to automatically create and activate License Manager grants whenever a new Marketplace private offer is accepted - eliminating manual per-account grant management.
 
+Deploy it with **AWS CDK** or **Terraform**. Both deploy the same resources from the same `config/sellers.json` and the same Lambda code.
+
 > **This is a sample.** It is intended as a starting point for customers to review, adapt, and extend to meet their own security, compliance, and operational requirements. See [Security](#security) for shared responsibility guidance.
 
 ## Challenge
@@ -46,10 +48,10 @@ This sample automates the grant distribution step so you never have to manually 
 
 This repo has **two independent ways** to fix the Disabled→Active grant problem. Pick one:
 
-| | [`lightweight/`](lightweight/) | This repo's CDK automation (below) |
+| | [`lightweight/`](lightweight/) | Full automation (below) |
 |---|---|---|
-| **What it is** | One script, run once | EventBridge + Lambda + DynamoDB, deployed via CDK |
-| **Setup** | None — clone and run | `cdk deploy` + config file |
+| **What it is** | One script, run once | EventBridge + Lambda + DynamoDB, deployed with AWS CDK or Terraform |
+| **Setup** | None — clone and run | Config file + `cdk deploy` or `terraform apply` |
 | **Scope** | Bedrock-matching received licenses (no seller allow-list) | Only sellers in your allow-list |
 | **Reacts to new offers automatically?** | No — re-run manually | Yes |
 | **Choose this if…** | You want the fastest fix, no infra, and trust the Bedrock-matching licenses currently in `ListReceivedLicenses` | You want ongoing, hands-off automation with per-seller control |
@@ -64,7 +66,7 @@ This repo has **two independent ways** to fix the Disabled→Active grant proble
 
 ### Prerequisites
 
-This stack must be deployed in your **AWS Organizations management account** in **`us-east-1`**.
+Deploy the automation in your **AWS Organizations management account** in **`us-east-1`**.
 
 Before deploying, verify:
 
@@ -73,7 +75,7 @@ Before deploying, verify:
    - Must say "All features" (not "Consolidated billing" only)
    - This script checks the setting, but does not enable it automatically because AWS Organizations might need member account handshakes.
 
-2. **Development Tools** - AWS CDK v2, Python 3.12+, AWS CLI with management account credentials
+2. **Development Tools** - Python 3.12+, AWS CLI with management account credentials, and either AWS CDK v2 or Terraform 1.7+
 
 3. **License Manager and Marketplace organization integration**
    - Run the bootstrap check from the management account in `us-east-1`:
@@ -105,6 +107,8 @@ python3 scripts/bootstrap_prereqs.py \
 
 ### Deploy
 
+Both tools share the same setup steps:
+
 ```bash
 # Clone
 git clone https://github.com/aws-samples/sample-bedrock-managed-entitlements.git
@@ -124,17 +128,54 @@ python3 scripts/setup_config.py
 
 # Or configure manually:
 # cp config/sellers.example.json config/sellers.json && edit config/sellers.json
+```
 
-# Deploy
+Then deploy with either tool.
+
+#### Choose CDK or Terraform
+
+Use the tool your team already uses. Both deploy the same functionality with the same default resource names, so the scripts in `scripts/` work with either. The real differences:
+
+- **State:** CDK keeps state in a CloudFormation stack. Terraform uses local state unless you configure a backend, such as S3.
+- **Logging:** Terraform creates the Lambda log groups itself and scopes each role to write only to its own group. CDK uses a log-retention custom resource and `AWSLambdaBasicExecutionRole`.
+- **Encryption:** Terraform encrypts the DynamoDB tables with the AWS managed KMS key. CDK uses the default AWS owned key.
+- **Overrides:** Terraform variables can override the settings it reads from `config/sellers.json`. Terraform also adds a resource name prefix, an on/off switch for the agreement rule, and a configurable retry schedule.
+
+See [docs/terraform.md](docs/terraform.md#differences-from-the-cdk-stack) for the full list.
+
+#### Deploy with AWS CDK
+
+Requires AWS CDK v2 and the Python packages in `cdk/requirements.txt`.
+
+```bash
 cd cdk && pip install -r requirements.txt
 cdk bootstrap aws://ACCOUNT_ID/us-east-1  # first time only
 cdk deploy
 
 # Seed DynamoDB with your allowed sellers
-cd .. && python scripts/seed_sellers.py --config config/sellers.json
+cd .. && python3 scripts/seed_sellers.py --config config/sellers.json
 ```
 
-**Prefer Terraform?** [`terraform/`](terraform/) deploys the same stack from the same `config/sellers.json`. See [docs/terraform.md](docs/terraform.md).
+Tear down with `cd cdk && cdk destroy`.
+
+#### Deploy with Terraform
+
+Requires Terraform 1.7 or later.
+
+```bash
+cd terraform
+terraform init
+terraform plan -out=tfplan
+terraform apply tfplan
+
+# Seed DynamoDB with your allowed sellers
+cd .. && python3 scripts/seed_sellers.py --config config/sellers.json \
+  --table-name "$(terraform -chdir=terraform output -raw seller_table_name)"
+```
+
+Tear down with `terraform -chdir=terraform destroy`. See [docs/terraform.md](docs/terraform.md) for variables, state backends, and running next to an existing CDK deployment.
+
+Either teardown deletes the allow-list and pending-grant tables. Back up the allow-list first if you need it.
 
 ### Configuration
 
@@ -378,6 +419,9 @@ See [`scripts/README.md`](scripts/README.md) for full usage.
 # Unit tests (32 passing - mocked AWS services)
 pip install -r requirements-dev.txt && pytest tests/ -v
 
+# Terraform plan assertions (offline, mocked AWS provider)
+terraform -chdir=terraform init && terraform -chdir=terraform test
+
 # Invoke the handler locally with an EventBridge-shaped payload
 python scripts/simulate_event.py --seller-account 123456789012
 
@@ -492,7 +536,7 @@ This sample deploys infrastructure into **your** AWS account. Under the [AWS Sha
 
 ### Cost Estimate
 
-This stack costs effectively **$0/month at rest**. You only pay when a private offer event fires.
+The deployment costs effectively **$0/month at rest**, whichever tool you use. You only pay when a private offer event fires.
 
 | Resource | Cost | Notes |
 |----------|------|-------|
@@ -506,13 +550,15 @@ This stack costs effectively **$0/month at rest**. You only pay when a private o
 
 **Estimated total: < $1/month** under normal usage (a few private offers per month).
 
-No NAT Gateways, no VPCs, no always-on compute. The stack is entirely serverless and event-driven.
+No NAT Gateways, no VPCs, no always-on compute. The deployment is entirely serverless and event-driven.
 
 ### FAQ
 
 **Is a subscription per model?** Yes. Each model needs its own subscription. This automation handles the grant step, but per-model subscription is inherent.
 
 **Which account do I deploy from?** The management account. Only it can create org-wide grants.
+
+**CDK or Terraform?** Either. Pick the one your team already uses. See [Choose CDK or Terraform](#choose-cdk-or-terraform).
 
 **What if my org uses "consolidated billing" only?** You're limited to account-level grants. Enable "all features" in Organizations.
 

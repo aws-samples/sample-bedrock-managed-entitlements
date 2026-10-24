@@ -178,6 +178,33 @@ run "auto_accept_enabled" {
     condition     = aws_cloudwatch_event_rule.auto_accept[0].schedule_expression == "rate(2 hours)"
     error_message = "Auto-accept schedule should come from auto_accept_schedule."
   }
+
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.auto_accept_errors[0].alarm_name == "mppo-auto-accept-handler-errors" &&
+      aws_lambda_function.auto_accept[0].environment[0].variables["NOTIFICATION_MODE"] == "exceptions_only"
+    )
+    error_message = "Auto-accept should have an error alarm and the notification mode, like the CDK stack."
+  }
+}
+
+run "notification_mode_override" {
+  command = plan
+
+  variables {
+    notification_mode = "all"
+    monitor_schedule  = "rate(12 hours)"
+  }
+
+  assert {
+    condition     = aws_lambda_function.handler.environment[0].variables["NOTIFICATION_MODE"] == "all"
+    error_message = "notification_mode should reach the handler environment."
+  }
+
+  assert {
+    condition     = aws_cloudwatch_event_rule.entitlement_monitor.schedule_expression == "rate(12 hours)"
+    error_message = "monitor_schedule should set the reconciliation schedule."
+  }
 }
 
 run "name_prefix_applies_everywhere" {
@@ -206,6 +233,14 @@ run "name_prefix_applies_everywhere" {
   assert {
     condition     = aws_cloudwatch_event_rule.agreement_created.state == "DISABLED"
     error_message = "agreement_rule_enabled = false should disable the agreement rule."
+  }
+
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.handler_errors.alarm_name == "mppo-tf-grants-handler-errors" &&
+      aws_cloudwatch_metric_alarm.monitor_heartbeat_missing.dimensions["Deployment"] == aws_lambda_function.handler.environment[0].variables["DEPLOYMENT_NAME"]
+    )
+    error_message = "The heartbeat alarm must watch the same Deployment dimension the handler publishes."
   }
 }
 

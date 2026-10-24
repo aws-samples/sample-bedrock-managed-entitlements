@@ -2,8 +2,9 @@
 
 [`terraform/`](../terraform/) deploys the same automation as the CDK stack: the
 grant handler Lambda, the seller allow-list and pending-grant DynamoDB tables,
-the SNS topic (with optional email and Slack), the agreement-created and
-activation-retry EventBridge rules, and the opt-in auto-accept Lambda. It reads
+the SNS topic (with optional email and Slack), the agreement-created,
+activation-retry, and entitlement-monitor EventBridge rules, the Lambda error
+and monitor heartbeat alarms, and the opt-in auto-accept Lambda. It reads
 the same `config/sellers.json`, ships the same `lambda/` code, and uses the same
 resource names by default, so the helper scripts work unchanged.
 
@@ -92,10 +93,12 @@ Pass the prefixed names to the scripts, for example
 - DynamoDB tables use the AWS managed KMS key for encryption at rest.
 - The Slack channel role has a `ReadOnlyAccess` guardrail, so the channel
   only receives notifications.
-- `agreement_rule_enabled`, `activation_retry_schedule`, `monitor_schedule`,
-  and `notification_mode` can be set.
-- A heartbeat metric is emitted after each successful reconciliation. The SNS
-  alarm fires after two daily periods without a completed run.
+- `name_prefix`, `agreement_rule_enabled`, and `activation_retry_schedule`
+  have no CDK equivalent. `monitor_schedule` and `notification_mode` override
+  `monitorSchedule` and `notifications.mode`, which both tools read from the
+  config file.
+- The monitor heartbeat metric's `Deployment` dimension follows `name_prefix`,
+  so a prefixed copy has its own dead-man alarm. CDK always uses `mppo`.
 
 ## Checks
 
