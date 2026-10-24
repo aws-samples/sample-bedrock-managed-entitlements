@@ -103,7 +103,7 @@ cdk deploy
 cd .. && python3 scripts/seed_sellers.py --config config/sellers.json
 ```
 
-Tear down with `cd cdk && cdk destroy`.
+Tear down with `cd cdk && cdk destroy`. See [Deploy with AWS CDK](docs/cdk.md) for bootstrapping, configuration, stack outputs, and assertion tests.
 
 ### Deploy with Terraform
 
@@ -128,6 +128,7 @@ Either teardown deletes the allow-list and pending-grant tables. Back up the all
 |-------|--------|
 | [Configuration](docs/configuration.md) | Organization prerequisites, `config/sellers.json`, notifications, finding seller and organization IDs |
 | [Architecture](docs/architecture.md) | Scope and limitations, how it works, grant targeting, grant activation |
+| [Deploy with AWS CDK](docs/cdk.md) | CDK bootstrapping, configuration, stack outputs, assertion tests, teardown |
 | [Deploy with Terraform](docs/terraform.md) | Terraform variables, state, side-by-side with CDK, differences from CDK |
 | [Operations](docs/operations.md) | Backfilling existing licenses, legacy grant cleanup, troubleshooting manual activation, cost |
 | [Auto-accept offers](docs/auto-accept.md) | Opt-in automatic acceptance of private offers and its risks |
