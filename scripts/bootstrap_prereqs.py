@@ -26,11 +26,20 @@ from botocore.exceptions import ClientError
 
 
 LICENSE_MANAGER_DELEGATED_ADMIN_PRINCIPAL = "license-manager.amazonaws.com"
+LICENSE_MANAGER_MEMBER_ACCOUNT_PRINCIPAL = "license-manager.member-account.amazonaws.com"
 MARKETPLACE_LICENSE_MANAGEMENT_PRINCIPAL = "license-management.marketplace.amazonaws.com"
 
 LICENSE_MANAGER_ORG_ROLE = "AWSServiceRoleForAWSLicenseManagerMasterAccountRole"
 LICENSE_MANAGER_ROLE = "AWSServiceRoleForAWSLicenseManagerRole"
+LICENSE_MANAGER_MEMBER_ACCOUNT_ROLE = "AWSServiceRoleForAWSLicenseManagerMemberAccountRole"
 MARKETPLACE_LICENSE_MANAGEMENT_ROLE = "AWSServiceRoleForMarketplaceLicenseManagement"
+
+SERVICE_LINKED_ROLES = {
+    LICENSE_MANAGER_ORG_ROLE: "license-manager.master-account.amazonaws.com",
+    LICENSE_MANAGER_ROLE: LICENSE_MANAGER_DELEGATED_ADMIN_PRINCIPAL,
+    LICENSE_MANAGER_MEMBER_ACCOUNT_ROLE: LICENSE_MANAGER_MEMBER_ACCOUNT_PRINCIPAL,
+    MARKETPLACE_LICENSE_MANAGEMENT_ROLE: MARKETPLACE_LICENSE_MANAGEMENT_PRINCIPAL,
+}
 
 
 @dataclass(frozen=True)
@@ -251,16 +260,71 @@ def apply_license_manager_trusted_access(orgs_client) -> CheckResult:
     return check_license_manager_trusted_access(orgs_client)
 
 
+def check_license_manager_member_trusted_access(orgs_client) -> CheckResult:
+    """Check trusted access used to distribute licenses to member accounts."""
+    try:
+        principals = _paginate(
+            orgs_client,
+            "list_aws_service_access_for_organization",
+            "EnabledServicePrincipals",
+        )
+        enabled = any(
+            principal.get("ServicePrincipal") == LICENSE_MANAGER_MEMBER_ACCOUNT_PRINCIPAL
+            for principal in principals
+        )
+    except ClientError as error:
+        if _client_error_code(error) == "AWSOrganizationsNotInUseException":
+            return CheckResult(
+                "License Manager member-account trusted access",
+                "FAIL",
+                "AWS Organizations is not enabled for this account.",
+                blocker=True,
+            )
+        return CheckResult(
+            "License Manager member-account trusted access",
+            "FAIL",
+            str(error),
+            blocker=True,
+        )
+
+    if enabled:
+        return CheckResult(
+            "License Manager member-account trusted access",
+            "OK",
+            f"{LICENSE_MANAGER_MEMBER_ACCOUNT_PRINCIPAL} is enabled.",
+        )
+
+    return CheckResult(
+        "License Manager member-account trusted access",
+        "APPLY",
+        f"{LICENSE_MANAGER_MEMBER_ACCOUNT_PRINCIPAL} is not enabled. Run with "
+        "--apply --confirm-account-id <current-account-id> to enable it.",
+        blocker=True,
+    )
+
+
+def apply_license_manager_member_trusted_access(orgs_client) -> CheckResult:
+    """Enable License Manager trusted access for member-account distribution."""
+    try:
+        orgs_client.enable_aws_service_access(
+            ServicePrincipal=LICENSE_MANAGER_MEMBER_ACCOUNT_PRINCIPAL
+        )
+    except ClientError as error:
+        return CheckResult(
+            "License Manager member-account trusted access",
+            "FAIL",
+            str(error),
+            blocker=True,
+        )
+
+    return check_license_manager_member_trusted_access(orgs_client)
+
+
 def check_service_linked_roles(iam_client) -> CheckResult:
     """Check service-linked roles created by License Manager and Marketplace."""
-    role_names = [
-        LICENSE_MANAGER_ORG_ROLE,
-        LICENSE_MANAGER_ROLE,
-        MARKETPLACE_LICENSE_MANAGEMENT_ROLE,
-    ]
     missing = []
 
-    for role_name in role_names:
+    for role_name in SERVICE_LINKED_ROLES:
         try:
             iam_client.get_role(RoleName=role_name)
         except ClientError as error:
@@ -279,6 +343,33 @@ def check_service_linked_roles(iam_client) -> CheckResult:
         )
 
     return CheckResult("Service-linked roles", "OK", "Required management-account roles exist.")
+
+
+def apply_service_linked_roles(iam_client) -> CheckResult:
+    """Create missing License Manager and Marketplace service-linked roles."""
+    for role_name, service_name in SERVICE_LINKED_ROLES.items():
+        try:
+            iam_client.get_role(RoleName=role_name)
+            continue
+        except ClientError as error:
+            if _client_error_code(error) != "NoSuchEntity":
+                return CheckResult("Service-linked roles", "FAIL", str(error), blocker=True)
+
+        try:
+            iam_client.create_service_linked_role(AWSServiceName=service_name)
+        except ClientError as error:
+            if _client_error_code(error) != "InvalidInput":
+                return CheckResult("Service-linked roles", "FAIL", str(error), blocker=True)
+
+    result = check_service_linked_roles(iam_client)
+    if result.status == "WARN":
+        return CheckResult(
+            "Service-linked roles",
+            "FAIL",
+            result.detail,
+            blocker=True,
+        )
+    return result
 
 
 def check_delegated_admin(orgs_client, account_id: str | None) -> CheckResult:
@@ -475,12 +566,6 @@ def main() -> int:
     print_result(org_result)
     can_apply_org_prereqs = apply_changes and not org_result.blocker
 
-    lm_result = check_license_manager_settings(lm)
-    if can_apply_org_prereqs and lm_result.status == "APPLY":
-        lm_result = apply_license_manager_settings(lm)
-    results.append(lm_result)
-    print_result(lm_result)
-
     trusted_result = check_marketplace_trusted_access(orgs)
     if can_apply_org_prereqs and trusted_result.status == "APPLY":
         trusted_result = apply_marketplace_trusted_access(orgs)
@@ -493,9 +578,23 @@ def main() -> int:
     results.append(lm_trusted_result)
     print_result(lm_trusted_result)
 
+    member_trusted_result = check_license_manager_member_trusted_access(orgs)
+    if can_apply_org_prereqs and member_trusted_result.status == "APPLY":
+        member_trusted_result = apply_license_manager_member_trusted_access(orgs)
+    results.append(member_trusted_result)
+    print_result(member_trusted_result)
+
     roles_result = check_service_linked_roles(iam)
+    if can_apply_org_prereqs and roles_result.status == "WARN":
+        roles_result = apply_service_linked_roles(iam)
     results.append(roles_result)
     print_result(roles_result)
+
+    lm_result = check_license_manager_settings(lm)
+    if can_apply_org_prereqs and lm_result.status == "APPLY":
+        lm_result = apply_license_manager_settings(lm)
+    results.append(lm_result)
+    print_result(lm_result)
 
     delegated_result = check_delegated_admin(orgs, args.delegated_admin_account_id)
     if can_apply_org_prereqs and delegated_result.status == "APPLY":

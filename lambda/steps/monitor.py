@@ -11,7 +11,8 @@ from steps.notify import notify_admins
 
 logger = logging.getLogger(__name__)
 
-ACTIVE_GRANT_STATUSES = {"ACTIVE", "WORKFLOW_COMPLETED"}
+ACTIVE_GRANT_STATUSES = {"ACTIVE"}
+DISTRIBUTION_COMPLETE_STATUSES = {"ACTIVE", "WORKFLOW_COMPLETED"}
 IGNORED_LICENSE_STATUSES = {"EXPIRED", "DELETED"}
 
 
@@ -30,6 +31,7 @@ def monitor_entitlements(
 
     discovery = boto3.client("marketplace-discovery", region_name=home_region)
     license_manager = boto3.client("license-manager", region_name=home_region)
+    organizations = boto3.client("organizations", region_name=home_region)
     account_id = boto3.client("sts", region_name=home_region).get_caller_identity()[
         "Account"
     ]
@@ -41,6 +43,8 @@ def monitor_entitlements(
     ]
     offers = _list_private_offers(discovery, profile_ids) if profile_ids else []
     licenses = _list_received_licenses(license_manager)
+    distributed_grants = _list_distributed_grants(license_manager)
+    organization_account_ids = _list_organization_account_ids(organizations)
 
     issues = _find_issues(
         sellers=sellers,
@@ -50,6 +54,8 @@ def monitor_entitlements(
         license_manager=license_manager,
         organization_id=organization_id,
         account_id=account_id,
+        distributed_grants=distributed_grants,
+        organization_account_ids=organization_account_ids,
     )
 
     if issues:
@@ -106,9 +112,14 @@ def _find_issues(
     license_manager,
     organization_id: str,
     account_id: str,
+    distributed_grants: list[dict] | None = None,
+    organization_account_ids: list[str] | None = None,
 ) -> list[str]:
     """Return human-readable reconciliation issues."""
     issues = []
+    pending_license_arns = {
+        item.get("licenseArn") for item in pending if item.get("licenseArn")
+    }
     sellers_by_profile = {
         seller.get("sellerProfileId"): seller
         for seller in sellers
@@ -163,6 +174,8 @@ def _find_issues(
         ]
         for license_record in matching_licenses:
             license_arn = license_record.get("LicenseArn")
+            if license_arn in pending_license_arns:
+                continue
             for target in targets:
                 principal_arn = _build_principal_arn(target, account_id)
                 grant = _find_grant(
@@ -173,12 +186,68 @@ def _find_issues(
                         f"license {license_arn} for {seller_name} has no grant "
                         f"for {target.get('type')} {target.get('id')}"
                     )
+                elif (
+                    target.get("type") == "organization"
+                    and distributed_grants is not None
+                    and organization_account_ids is not None
+                ):
+                    if grant.get("GrantStatus") not in DISTRIBUTION_COMPLETE_STATUSES:
+                        issues.append(
+                            f"grant {grant.get('GrantArn', 'unknown')} for "
+                            f"{seller_name} is {grant.get('GrantStatus', 'UNKNOWN')}"
+                        )
+                        continue
+                    active_principals = {
+                        item.get("GranteePrincipalArn")
+                        for item in distributed_grants
+                        if (
+                            item.get("LicenseArn") == license_arn
+                            and item.get("GrantStatus") == "ACTIVE"
+                        )
+                    }
+                    for member_account_id in organization_account_ids:
+                        if member_account_id == account_id:
+                            continue
+                        member_principal = (
+                            f"arn:aws:iam::{member_account_id}:root"
+                        )
+                        if member_principal not in active_principals:
+                            issues.append(
+                                f"license {license_arn} for {seller_name} has no "
+                                f"active grant in member account {member_account_id}"
+                            )
                 elif grant.get("GrantStatus") not in ACTIVE_GRANT_STATUSES:
                     issues.append(
                         f"grant {grant.get('GrantArn', 'unknown')} for "
                         f"{seller_name} is {grant.get('GrantStatus', 'UNKNOWN')}"
                     )
     return issues
+
+
+def _list_distributed_grants(license_manager) -> list[dict]:
+    grants = []
+    token = None
+    while True:
+        kwargs = {}
+        if token:
+            kwargs["NextToken"] = token
+        response = license_manager.list_distributed_grants(**kwargs)
+        grants.extend(response.get("Grants", []))
+        token = response.get("NextToken")
+        if not token:
+            return grants
+
+
+def _list_organization_account_ids(organizations) -> list[str]:
+    account_ids = []
+    paginator = organizations.get_paginator("list_accounts")
+    for page in paginator.paginate():
+        account_ids.extend(
+            account["Id"]
+            for account in page.get("Accounts", [])
+            if account.get("Status") == "ACTIVE"
+        )
+    return account_ids
 
 
 def _license_matches(
@@ -203,17 +272,42 @@ def _find_grant(license_manager, license_arn: str, principal_arn: str) -> dict |
         {"Name": "GranteePrincipalARN", "Values": [principal_arn]},
     ]
     token = None
+    fallback = None
     while True:
         kwargs = {"Filters": filters}
         if token:
             kwargs["NextToken"] = token
         response = license_manager.list_distributed_grants(**kwargs)
         grants = response.get("Grants", [])
-        if grants:
-            return grants[0]
+        for grant in grants:
+            if grant.get("GrantStatus") == "ACTIVE":
+                return grant
+            if fallback is None:
+                fallback = grant
         token = response.get("NextToken")
         if not token:
-            return None
+            break
+
+    # License Manager's filtered listing can omit an older ACTIVE grant when a
+    # second grant for the same license and principal is still in workflow.
+    # Fall back to the unfiltered listing before declaring the entitlement
+    # inactive.
+    token = None
+    while True:
+        kwargs = {}
+        if token:
+            kwargs["NextToken"] = token
+        response = license_manager.list_distributed_grants(**kwargs)
+        for grant in response.get("Grants", []):
+            if (
+                grant.get("LicenseArn") == license_arn
+                and grant.get("GranteePrincipalArn") == principal_arn
+                and grant.get("GrantStatus") == "ACTIVE"
+            ):
+                return grant
+        token = response.get("NextToken")
+        if not token:
+            return fallback
 
 
 def _list_received_licenses(license_manager) -> list[dict]:

@@ -16,7 +16,10 @@ python3 scripts/bootstrap_prereqs.py \
   --confirm-account-id 123456789012
 ```
 
-- This can enable License Manager organization integration and AWS Marketplace trusted access. It also checks the service-linked roles used by License Manager and Marketplace license management.
+- This enables the three trusted-access principals used by License Manager,
+  License Manager member accounts, and AWS Marketplace license management. It
+  also creates their service-linked roles before enabling License Manager
+  organization integration.
 - If you use a License Manager delegated administrator account, pass and confirm it explicitly:
 
 ```bash

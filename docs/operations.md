@@ -12,7 +12,12 @@ EventBridge automation handles new Marketplace agreement events. For licenses ac
 python3 scripts/backfill_grants.py --config config/sellers.json
 ```
 
-Backfill is allow-list scoped and dry-run by default. Because License Manager received licenses do not reliably expose the Marketplace proposer account ID, the script refuses broad issuer-only matching. Narrow the run by passing explicit `--license-arn` values, or add `productSkus` or `productNames` to the relevant seller config.
+Backfill is allow-list scoped and dry-run by default. Because License Manager received licenses do not reliably expose the Marketplace proposer account ID, the script refuses broad issuer-only matching. Add `productSkus` or `productNames` to the relevant seller config. If those fields are unavailable, narrow the run with both `--license-arn` and `--seller-account`; a license ARN alone cannot safely distinguish sellers that share the `AWS/Marketplace` issuer.
+
+The scheduled entitlement monitor checks pending offers and activation retries. For
+organization-wide targets, it also requires an active child grant in every active
+member account. The organization grant's `WORKFLOW_COMPLETED` status only confirms
+distribution; it does not prove that member accounts can use the product.
 
 ```bash
 python3 scripts/backfill_grants.py \

@@ -10,7 +10,7 @@ from steps.notify import notify_admins, success_notifications_enabled
 
 logger = logging.getLogger(__name__)
 
-SUCCESS_STATUSES = {"ACTIVE", "WORKFLOW_COMPLETED"}
+SUCCESS_STATUSES = {"ACTIVE"}
 
 
 def _now_iso() -> str:

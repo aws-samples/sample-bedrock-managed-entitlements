@@ -93,8 +93,9 @@ def license_matches_seller(
     if issuer_name != seller.get("issuerName"):
         return False
 
-    if license_record.get("LicenseArn") in explicit_license_arns:
-        return True
+    license_arn = license_record.get("LicenseArn")
+    if explicit_license_arns and license_arn not in explicit_license_arns:
+        return False
 
     skus, names = product_filters(seller)
     if skus and license_record.get("ProductSKU") in skus:
@@ -102,7 +103,7 @@ def license_matches_seller(
     if names and license_record.get("ProductName") in names:
         return True
 
-    return False
+    return not (skus or names) and license_arn in explicit_license_arns
 
 
 def build_backfill_plan(
@@ -129,10 +130,12 @@ def build_backfill_plan(
             blocked.append(f"{seller_name}: missing issuerName")
             continue
 
-        if not has_product_filters(seller) and not explicit_license_arns:
+        if not has_product_filters(seller) and not (
+            explicit_license_arns and seller_account in selected_sellers
+        ):
             blocked.append(
                 f"{seller_name}: issuer-only match is too broad; add productSkus, "
-                "productNames, or pass --license-arn"
+                "productNames, or pass both --license-arn and --seller-account"
             )
             continue
 
@@ -210,7 +213,7 @@ def apply_plan(
 ) -> int:
     """Apply the planned grants, recording any that don't activate immediately.
 
-    Grants that don't reach ACTIVE/WORKFLOW_COMPLETED on the first attempt are
+    Grants that don't reach ACTIVE on the first attempt are
     recorded in the pending-grants table, the same way handler.py's
     EventBridge-triggered path does. Without this, a backfilled grant that
     lands in DISABLED/PENDING_WORKFLOW has no automatic path to activation --
