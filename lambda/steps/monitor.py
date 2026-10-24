@@ -6,6 +6,7 @@ import boto3
 
 from auto_accept_handler import _list_private_offers
 from steps.create_grant import _build_principal_arn
+from steps.discover_license import _list_all_licenses
 from steps.notify import notify_admins
 
 logger = logging.getLogger(__name__)
@@ -216,11 +217,8 @@ def _find_grant(license_manager, license_arn: str, principal_arn: str) -> dict |
 
 
 def _list_received_licenses(license_manager) -> list[dict]:
-    licenses = []
-    paginator = license_manager.get_paginator("list_received_licenses")
-    for page in paginator.paginate():
-        licenses.extend(page.get("Licenses", []))
-    return licenses
+    # botocore has no paginator for ListReceivedLicenses.
+    return _list_all_licenses(license_manager)
 
 
 def _scan_all(table) -> list[dict]:
