@@ -31,3 +31,12 @@ htmlcov/
 
 # Node (if CDK installed locally)
 node_modules/
+
+# Terraform (state and plans are per-deployment, never committed)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+terraform/.build/

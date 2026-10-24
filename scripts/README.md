@@ -9,7 +9,7 @@ Utility scripts for deployment, testing, and discount verification.
 | Script | Run From | Purpose |
 |--------|----------|---------|
 | `setup_config.py` | Management account | **Start here** — interactive setup that auto-discovers org ID and licenses |
-| `bootstrap_prereqs.py` | Management account | Check and optionally enable License Manager and Marketplace organization prerequisites |
+| `bootstrap_prereqs.py` | Management account | Check and optionally enable License Manager, member-account, and Marketplace organization prerequisites |
 | `seed_sellers.py` | Management account | Populate DynamoDB with allowed sellers after `cdk deploy` |
 | `backfill_grants.py` | Management account | Backfill grants for existing received licenses, scoped to the allow-list |
 | `simulate_event.py` | Management account | Generate test events and invoke the handler locally or deployed Lambda |

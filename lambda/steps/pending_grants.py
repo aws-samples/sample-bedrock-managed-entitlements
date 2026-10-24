@@ -6,11 +6,11 @@ from datetime import datetime, timezone
 import boto3
 
 from steps.create_grant import _activate_grant
-from steps.notify import notify_admins
+from steps.notify import notify_admins, success_notifications_enabled
 
 logger = logging.getLogger(__name__)
 
-SUCCESS_STATUSES = {"ACTIVE", "WORKFLOW_COMPLETED"}
+SUCCESS_STATUSES = {"ACTIVE"}
 
 
 def _now_iso() -> str:
@@ -91,20 +91,21 @@ def retry_pending_grant_activations(
             if status in SUCCESS_STATUSES:
                 table.delete_item(Key={"grantArn": grant_arn})
                 completed += 1
-                notify_admins(
-                    topic_arn=topic_arn,
-                    subject=f"MPPO Grant Activated: {item.get('sellerName', 'Unknown')}",
-                    message=(
-                        f"Pending MPPO grant activation completed.\n\n"
-                        f"Seller: {item.get('sellerName', 'Unknown')}\n"
-                        f"Product: {item.get('productName', 'Unknown')}\n"
-                        f"Agreement ID: {item.get('agreementId', 'N/A')}\n"
-                        f"Offer ID: {item.get('offerId', 'N/A')}\n"
-                        f"License ARN: {item.get('licenseArn', 'N/A')}\n"
-                        f"Grant ARN: {grant_arn}\n"
-                        f"Grant Status: {status}"
-                    ),
-                )
+                if success_notifications_enabled():
+                    notify_admins(
+                        topic_arn=topic_arn,
+                        subject=f"MPPO Grant Activated: {item.get('sellerName', 'Unknown')}",
+                        message=(
+                            f"Pending MPPO grant activation completed.\n\n"
+                            f"Seller: {item.get('sellerName', 'Unknown')}\n"
+                            f"Product: {item.get('productName', 'Unknown')}\n"
+                            f"Agreement ID: {item.get('agreementId', 'N/A')}\n"
+                            f"Offer ID: {item.get('offerId', 'N/A')}\n"
+                            f"License ARN: {item.get('licenseArn', 'N/A')}\n"
+                            f"Grant ARN: {grant_arn}\n"
+                            f"Grant Status: {status}"
+                        ),
+                    )
             else:
                 _update_pending_item(table, grant_arn, status)
                 still_pending += 1

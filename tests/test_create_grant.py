@@ -19,9 +19,10 @@ from steps.create_grant import (
 class FakeLicenseManager:
     """Minimal fake for grant status polling tests."""
 
-    def __init__(self, statuses, activation_response):
+    def __init__(self, statuses, activation_response, distributed_grants=None):
         self.statuses = list(statuses)
         self.activation_response = activation_response
+        self.distributed_grants = distributed_grants or []
         self.create_grant_version_calls = []
 
     def get_grant(self, GrantArn):
@@ -41,6 +42,9 @@ class FakeLicenseManager:
     def create_grant_version(self, **kwargs):
         self.create_grant_version_calls.append(kwargs)
         return self.activation_response
+
+    def list_distributed_grants(self, **kwargs):
+        return {"Grants": self.distributed_grants}
 
 
 class FakeOperationsClient:
@@ -92,7 +96,7 @@ class FakeStsClient:
         return {"Account": "111122223333"}
 
 
-def test_activate_grant_waits_for_disabled_then_workflow_completed():
+def test_activate_grant_keeps_workflow_completed_activation_pending():
     """Activation waits through delayed License Manager workflow states."""
     client = FakeLicenseManager(
         statuses=[
@@ -113,7 +117,7 @@ def test_activate_grant_waits_for_disabled_then_workflow_completed():
             poll_interval_seconds=0,
         )
 
-    assert result == "WORKFLOW_COMPLETED"
+    assert result == "ACTIVATION_PENDING"
     assert len(client.create_grant_version_calls) == 1
     assert client.create_grant_version_calls[0]["Status"] == "ACTIVE"
     assert client.create_grant_version_calls[0]["SourceVersion"] == "2"
@@ -141,10 +145,62 @@ def test_activate_grant_uses_replace_legacy_override():
             replace_legacy=True,
         )
 
-    assert result == "WORKFLOW_COMPLETED"
+    assert result == "ACTIVATION_PENDING"
     assert client.create_grant_version_calls[0]["Options"] == {
         "ActivationOverrideBehavior": "ALL_GRANTS_PERMITTED_BY_ISSUER"
     }
+
+
+def test_activate_grant_activates_completed_distribution_workflow():
+    client = FakeLicenseManager(
+        statuses=[
+            ("WORKFLOW_COMPLETED", "2"),
+            ("ACTIVE", "3"),
+        ],
+        activation_response={"Status": "PENDING_WORKFLOW", "Version": "3"},
+    )
+
+    with patch("steps.create_grant.time.sleep", return_value=None):
+        result = _activate_grant(
+            client,
+            "arn:aws:license-manager::111122223333:grant:g-test",
+            max_retries=2,
+            poll_interval_seconds=0,
+        )
+
+    assert result == "ACTIVE"
+    assert client.create_grant_version_calls[0]["SourceVersion"] == "2"
+
+
+def test_activate_grant_accepts_active_child_grant_as_success():
+    grant_arn = "arn:aws:license-manager::111122223333:grant:g-test"
+    license_arn = "arn:aws:license-manager::444455556666:license:l-test"
+    client = FakeLicenseManager(
+        statuses=[("WORKFLOW_COMPLETED", "4")],
+        activation_response={},
+        distributed_grants=[{
+            "GrantArn": "arn:aws:license-manager::111122223333:grant:g-child",
+            "ParentArn": grant_arn,
+            "LicenseArn": license_arn,
+            "GrantStatus": "ACTIVE",
+        }],
+    )
+    original_get_grant = client.get_grant
+
+    def get_grant_with_license(GrantArn):
+        response = original_get_grant(GrantArn)
+        response["Grant"]["LicenseArn"] = license_arn
+        response["Grant"]["Options"] = {
+            "ActivationOverrideBehavior": "DISTRIBUTED_GRANTS_ONLY"
+        }
+        return response
+
+    client.get_grant = get_grant_with_license
+
+    result = _activate_grant(client, grant_arn, max_retries=1)
+
+    assert result == "ACTIVE"
+    assert client.create_grant_version_calls == []
 
 
 def test_activate_grant_times_out_without_disabled_state():

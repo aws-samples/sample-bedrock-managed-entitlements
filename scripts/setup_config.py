@@ -121,7 +121,7 @@ def build_seller_entry(
     Mirrors the fields seed_sellers.py writes to DynamoDB. Auto-accept
     requires sellerProfileId -- offers are authorized on that AWS-assigned
     ID, never on the seller's display name (see auto_accept_handler.py and
-    the README's "How offers are authorized" section). A seller with
+    docs/auto-accept.md, "How offers are authorized"). A seller with
     autoAcceptOffers but no sellerProfileId is written as-is; the Lambda
     and seed_sellers.py both fail closed on it and report why via SNS,
     rather than silently matching nothing the way the pre-fix handler did.

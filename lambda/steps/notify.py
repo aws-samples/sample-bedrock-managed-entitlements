@@ -1,6 +1,7 @@
-"""Step 4: Send notifications via SNS."""
+"""Send operational notifications via SNS."""
 
 import logging
+import os
 
 import boto3
 from botocore.exceptions import ClientError
@@ -8,6 +9,11 @@ from botocore.exceptions import ClientError
 logger = logging.getLogger(__name__)
 
 sns = boto3.client("sns", region_name="us-east-1")
+
+
+def success_notifications_enabled() -> bool:
+    """Return whether routine success notifications are enabled."""
+    return os.environ.get("NOTIFICATION_MODE", "exceptions_only") == "all"
 
 
 def notify_admins(

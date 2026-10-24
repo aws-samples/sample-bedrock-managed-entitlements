@@ -74,7 +74,7 @@ def test_retry_pending_grants_deletes_completed_item():
         }
     )
 
-    with patch("steps.pending_grants._activate_grant", return_value="WORKFLOW_COMPLETED"):
+    with patch("steps.pending_grants._activate_grant", return_value="ACTIVE"):
         result = retry_pending_grant_activations(
             table_name="mppo-pending-grants",
             home_region="us-east-1",
