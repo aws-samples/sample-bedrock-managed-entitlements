@@ -52,7 +52,8 @@ Deployed with AWS CDK or Terraform, the automation handles grant distribution so
 3. **Discovers** the license created by the subscription
 4. **Creates and activates** an organization-wide grant (addressing the Disabled→Active gotcha)
 5. **Retries activation asynchronously** if License Manager is still processing the grant
-6. **Notifies** your team via Amazon SNS
+6. **Alerts** your team via Amazon SNS only when action is needed or a run fails (`notifications.mode` defaults to `exceptions_only`)
+7. **Reconciles** daily to catch unaccepted offers and missing or inactive grants, with a heartbeat alarm if the reconciliation stops completing
 
 See [Architecture](docs/architecture.md#how-it-works) for the full flow.
 
