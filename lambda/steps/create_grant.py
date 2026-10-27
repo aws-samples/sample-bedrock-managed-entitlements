@@ -446,8 +446,48 @@ def _activate_grant(
                 return "ACTIVE"
 
             if current_status == "WORKFLOW_COMPLETED":
-                logger.info("Grant workflow completed (effectively active)")
-                return "WORKFLOW_COMPLETED"
+                if activation_requested or grant.get("Options", {}).get(
+                    "ActivationOverrideBehavior"
+                ):
+                    if _has_active_child_grant(
+                        client,
+                        grant_arn,
+                        grant.get("LicenseArn"),
+                    ):
+                        logger.info(
+                            "Grant workflow produced an active child grant"
+                        )
+                        return "ACTIVE"
+                    logger.warning(
+                        "Grant activation workflow completed without reaching ACTIVE"
+                    )
+                    return "ACTIVATION_PENDING"
+
+                override_behavior = (
+                    "ALL_GRANTS_PERMITTED_BY_ISSUER"
+                    if replace_legacy
+                    else "DISTRIBUTED_GRANTS_ONLY"
+                )
+                logger.info(
+                    "Grant distribution workflow completed; activating with "
+                    "behavior: %s",
+                    override_behavior,
+                )
+                activate_response = client.create_grant_version(
+                    ClientToken=str(uuid.uuid4()),
+                    GrantArn=grant_arn,
+                    Status="ACTIVE",
+                    SourceVersion=current_version,
+                    Options={
+                        "ActivationOverrideBehavior": override_behavior
+                    },
+                )
+                activation_requested = True
+                new_status = activate_response.get("Status", "UNKNOWN")
+                if new_status == "ACTIVE":
+                    return "ACTIVE"
+                time.sleep(poll_interval_seconds)
+                continue
 
             if current_status in ("PENDING_WORKFLOW", "PENDING_ACCEPT"):
                 # Grant is still being processed, wait
@@ -487,7 +527,7 @@ def _activate_grant(
                     new_status, activate_response.get("Version"),
                 )
 
-                if new_status in ("ACTIVE", "WORKFLOW_COMPLETED"):
+                if new_status == "ACTIVE":
                     return new_status
 
                 time.sleep(poll_interval_seconds)
@@ -520,6 +560,26 @@ def _activate_grant(
         max_retries, last_status,
     )
     return "ACTIVATION_PENDING"
+
+
+def _has_active_child_grant(client, grant_arn: str, license_arn: str | None) -> bool:
+    """Return whether an organization grant produced an active account grant."""
+    token = None
+    while True:
+        kwargs = {}
+        if token:
+            kwargs["NextToken"] = token
+        response = client.list_distributed_grants(**kwargs)
+        for grant in response.get("Grants", []):
+            if (
+                grant.get("ParentArn") == grant_arn
+                and grant.get("LicenseArn") == license_arn
+                and grant.get("GrantStatus") == "ACTIVE"
+            ):
+                return True
+        token = response.get("NextToken")
+        if not token:
+            return False
 
 
 def _find_existing_grant(

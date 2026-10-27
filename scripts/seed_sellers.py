@@ -12,6 +12,27 @@ import json
 import boto3
 
 
+def build_seller_item(seller):
+    """Build the DynamoDB item without dropping reconciliation scope."""
+    item = {
+        "proposerAccountId": seller["proposerAccountId"],
+        "name": seller.get("name", "Unknown"),
+        "issuerName": seller["issuerName"],
+        "autoActivateGrant": seller.get("autoActivateGrant", True),
+        "autoAcceptOffers": seller.get("autoAcceptOffers", False),
+        "replaceLegacyGrants": seller.get("replaceLegacyGrants", False),
+    }
+    for optional_field in (
+        "grantTargets",
+        "productSkus",
+        "productNames",
+        "sellerProfileId",
+    ):
+        if seller.get(optional_field):
+            item[optional_field] = seller[optional_field]
+    return item
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Seed MPPO allowed sellers DynamoDB table"
@@ -54,21 +75,10 @@ def main():
     print()
 
     for seller in sellers:
-        item = {
-            "proposerAccountId": seller["proposerAccountId"],
-            "name": seller.get("name", "Unknown"),
-            "issuerName": seller["issuerName"],
-            "autoActivateGrant": seller.get("autoActivateGrant", True),
-            "autoAcceptOffers": seller.get("autoAcceptOffers", False),
-            "replaceLegacyGrants": seller.get("replaceLegacyGrants", False),
-        }
-        if "grantTargets" in seller:
-            item["grantTargets"] = seller["grantTargets"]
+        item = build_seller_item(seller)
         # Required for auto-accept: offers are authorized on this ID, never on
         # the seller's display name. Omitted sellers simply never auto-accept.
-        if seller.get("sellerProfileId"):
-            item["sellerProfileId"] = seller["sellerProfileId"]
-        elif seller.get("autoAcceptOffers"):
+        if seller.get("autoAcceptOffers") and not item.get("sellerProfileId"):
             print(
                 "  ! " + seller.get("name", seller["proposerAccountId"])
                 + " has autoAcceptOffers but no sellerProfileId -- its offers "

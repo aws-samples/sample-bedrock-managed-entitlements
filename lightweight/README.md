@@ -6,7 +6,7 @@ This folder is a **self-contained alternative** to the CDK automation in this re
 
 **What you give up:** it isn't scoped to an allow-list, and it doesn't react automatically to new private offers going forward. For that, see the [full CDK automation](../README.md) or its allow-list-scoped backfill script, [`../scripts/backfill_grants.py`](../scripts/backfill_grants.py).
 
-If you're not sure which path is right for you, see [Choose Your Path](../README.md#choose-your-path) in the main README.
+If you're not sure which path is right for you, see [Solution](../README.md#solution) in the main README.
 
 ## Usage
 

@@ -4,14 +4,19 @@ from botocore.exceptions import ClientError
 
 from scripts.bootstrap_prereqs import (
     LICENSE_MANAGER_DELEGATED_ADMIN_PRINCIPAL,
+    LICENSE_MANAGER_MEMBER_ACCOUNT_PRINCIPAL,
+    LICENSE_MANAGER_MEMBER_ACCOUNT_ROLE,
     MARKETPLACE_LICENSE_MANAGEMENT_PRINCIPAL,
     CheckResult,
     apply_delegated_admin,
     apply_license_manager_settings,
+    apply_license_manager_member_trusted_access,
     apply_license_manager_trusted_access,
     apply_marketplace_trusted_access,
+    apply_service_linked_roles,
     check_delegated_admin,
     check_license_manager_settings,
+    check_license_manager_member_trusted_access,
     check_license_manager_trusted_access,
     check_marketplace_trusted_access,
     check_organization,
@@ -105,6 +110,18 @@ class FakeIam:
             "GetRole",
         )
 
+    def create_service_linked_role(self, AWSServiceName):
+        role_names = {
+            "license-manager.master-account.amazonaws.com":
+                "AWSServiceRoleForAWSLicenseManagerMasterAccountRole",
+            "license-manager.amazonaws.com": "AWSServiceRoleForAWSLicenseManagerRole",
+            "license-manager.member-account.amazonaws.com":
+                "AWSServiceRoleForAWSLicenseManagerMemberAccountRole",
+            "license-management.marketplace.amazonaws.com":
+                "AWSServiceRoleForMarketplaceLicenseManagement",
+        }
+        self.existing_roles.add(role_names[AWSServiceName])
+
 
 def test_organization_requires_all_features():
     orgs = FakeOrganizations(org={
@@ -193,6 +210,29 @@ def test_license_manager_trusted_access_is_independent_of_marketplace_trusted_ac
     assert lm_result.blocker is True
 
 
+def test_license_manager_member_trusted_access_can_be_applied():
+    orgs = FakeOrganizations(service_principals=[])
+
+    before = check_license_manager_member_trusted_access(orgs)
+    after = apply_license_manager_member_trusted_access(orgs)
+
+    assert before.status == "APPLY"
+    assert before.blocker is True
+    assert orgs.enabled_principal == LICENSE_MANAGER_MEMBER_ACCOUNT_PRINCIPAL
+    assert after.status == "OK"
+
+
+def test_member_trusted_access_is_independent_of_license_manager_trusted_access():
+    orgs = FakeOrganizations(
+        service_principals=[LICENSE_MANAGER_DELEGATED_ADMIN_PRINCIPAL]
+    )
+
+    result = check_license_manager_member_trusted_access(orgs)
+
+    assert result.status == "APPLY"
+    assert result.blocker is True
+
+
 def test_service_linked_role_check_warns_for_missing_roles():
     iam = FakeIam(existing_roles=["AWSServiceRoleForAWSLicenseManagerRole"])
 
@@ -201,6 +241,15 @@ def test_service_linked_role_check_warns_for_missing_roles():
     assert result.status == "WARN"
     assert result.blocker is False
     assert "Missing roles" in result.detail
+
+
+def test_service_linked_roles_can_be_applied():
+    iam = FakeIam(existing_roles=["AWSServiceRoleForAWSLicenseManagerRole"])
+
+    result = apply_service_linked_roles(iam)
+
+    assert result.status == "OK"
+    assert LICENSE_MANAGER_MEMBER_ACCOUNT_ROLE in iam.existing_roles
 
 
 def test_delegated_admin_is_opt_in():

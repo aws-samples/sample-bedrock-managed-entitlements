@@ -1,0 +1,27 @@
+# Copy to terraform.tfvars (git-ignored) and adjust. Every value is optional
+# when config/sellers.json exists: unset values fall back to that file.
+
+# organization_id = "o-abc1234567"
+
+# Keep the CDK names ("mppo") for a Terraform-only deployment, or pick another
+# prefix to run alongside an existing CDK stack in the same account.
+# name_prefix = "mppo"
+
+# Disable while another deployment handles the same agreement events.
+# agreement_rule_enabled = true
+
+# notification_emails = ["platform-team@example.com"]
+# notification_mode   = "exceptions_only"
+# monitor_schedule    = "rate(1 day)"
+
+# slack_workspace_id = "T01ABCDEF"
+# slack_channel_id   = "C01ABCDEF"
+
+# Accepting offers creates financial commitments. Read the auto-accept section
+# of the README before enabling.
+# enable_auto_accept   = false
+# auto_accept_schedule = "rate(1 hour)"
+
+# tags = {
+#   CostCenter = "platform"
+# }

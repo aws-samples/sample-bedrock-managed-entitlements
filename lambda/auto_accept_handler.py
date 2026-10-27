@@ -64,6 +64,7 @@ import os
 
 import boto3
 from botocore.exceptions import ClientError
+from steps.notify import success_notifications_enabled
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -197,7 +198,7 @@ def lambda_handler(event: dict, context) -> dict:
             logger.error(error_msg)
             errors.append(error_msg)
 
-    if accepted:
+    if accepted and success_notifications_enabled():
         lines = ["The following offers were automatically accepted:", ""]
         lines.extend(
             "  - " + a["seller"] + ": offer " + str(a["offer_id"]) + " -> agreement " + str(a["agreement_id"])

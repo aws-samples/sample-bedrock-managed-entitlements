@@ -235,6 +235,63 @@ def test_activation_retry_rule_schedule():
     )
 
 
+def test_entitlement_monitor_and_error_alarm():
+    """Daily reconciliation and Lambda failures notify operators."""
+    template = get_template()
+
+    template.has_resource_properties(
+        "AWS::Events::Rule",
+        {
+            "Name": "mppo-entitlement-monitor",
+            "ScheduleExpression": "rate(1 day)",
+            "State": "ENABLED",
+        },
+    )
+    template.has_resource_properties(
+        "AWS::CloudWatch::Alarm",
+        {
+            "AlarmName": "mppo-grants-handler-errors",
+            "MetricName": "Errors",
+            "Namespace": "AWS/Lambda",
+            "Threshold": 1,
+            "TreatMissingData": "notBreaching",
+        },
+    )
+    template.has_resource_properties(
+        "AWS::CloudWatch::Alarm",
+        {
+            "AlarmName": "mppo-grants-handler-monitor-heartbeat-missing",
+            "MetricName": "ReconciliationCompleted",
+            "Namespace": "MPPO/Entitlements",
+            "ComparisonOperator": "LessThanThreshold",
+            "EvaluationPeriods": 2,
+            "DatapointsToAlarm": 2,
+            "TreatMissingData": "breaching",
+        },
+    )
+
+
+def test_scheduled_rule_inputs_match_handler_dispatch():
+    """The retry and monitor rules send payloads the handler routes to their steps."""
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lambda"))
+    import handler
+
+    template = get_template()
+    inputs = {}
+    for rule in template.find_resources("AWS::Events::Rule").values():
+        props = rule["Properties"]
+        for target in props.get("Targets", []):
+            if "Input" in target:
+                inputs[props["Name"]] = json.loads(target["Input"])
+
+    retry_input = inputs["mppo-grant-activation-retry"]
+    monitor_input = inputs["mppo-entitlement-monitor"]
+    assert retry_input["source"] == handler.RETRY_EVENT_SOURCE
+    assert retry_input["detail-type"] == handler.RETRY_EVENT_DETAIL_TYPE
+    assert monitor_input["source"] == handler.RETRY_EVENT_SOURCE
+    assert monitor_input["detail-type"] == handler.MONITOR_EVENT_DETAIL_TYPE
+
+
 def test_auto_accept_not_deployed_by_default():
     """Auto-accept Lambda is opt-in and absent when enableAutoAccept is unset."""
     template = get_template()

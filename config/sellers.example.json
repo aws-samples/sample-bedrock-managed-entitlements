@@ -1,6 +1,7 @@
 {
   "organizationId": "o-xxxxxxxxxx",
   "enableAutoAccept": false,
+  "monitorSchedule": "rate(1 day)",
   "allowedSellers": [
     {
       "name": "Anthropic",
@@ -13,6 +14,7 @@
     }
   ],
   "notifications": {
+    "mode": "exceptions_only",
     "emailAddresses": ["admin@example.com"],
     "slackWorkspaceId": "",
     "slackChannelId": ""

@@ -2,7 +2,7 @@
 
 import os
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
@@ -48,7 +48,7 @@ def test_backfill_blocks_issuer_only_matching():
     assert plan.items == []
     assert plan.blocked == [
         "ISV Partner: issuer-only match is too broad; add productSkus, "
-        "productNames, or pass --license-arn"
+        "productNames, or pass both --license-arn and --seller-account"
     ]
 
 
@@ -70,7 +70,7 @@ def test_backfill_matches_product_sku_filter():
     assert plan.blocked == []
 
 
-def test_backfill_matches_explicit_license_arn_without_product_filter():
+def test_backfill_requires_seller_for_explicit_license_without_product_filter():
     license_arn = "arn:aws:license-manager::111122223333:license:l-test"
     plan = build_backfill_plan(
         config=_config({
@@ -82,8 +82,51 @@ def test_backfill_matches_explicit_license_arn_without_product_filter():
         license_arns=[license_arn],
     )
 
+    assert plan.items == []
+    assert plan.blocked
+
+
+def test_backfill_matches_explicit_license_arn_for_selected_seller():
+    license_arn = "arn:aws:license-manager::111122223333:license:l-test"
+    plan = build_backfill_plan(
+        config=_config({
+            "name": "ISV Partner",
+            "proposerAccountId": "123456789012",
+            "issuerName": "AWS/Marketplace",
+        }),
+        licenses=[_license()],
+        license_arns=[license_arn],
+        seller_accounts=["123456789012"],
+    )
+
     assert len(plan.items) == 1
     assert plan.items[0].license_record["LicenseArn"] == license_arn
+
+
+def test_explicit_license_does_not_bypass_seller_product_scope():
+    plan = build_backfill_plan(
+        config={
+            "organizationId": "o-exampleorg",
+            "allowedSellers": [
+                {
+                    "name": "Wrong seller",
+                    "proposerAccountId": "111111111111",
+                    "issuerName": "AWS/Marketplace",
+                    "productSkus": ["prod-other"],
+                },
+                {
+                    "name": "Right seller",
+                    "proposerAccountId": "222222222222",
+                    "issuerName": "AWS/Marketplace",
+                    "productSkus": ["prod-example"],
+                },
+            ],
+        },
+        licenses=[_license()],
+        license_arns=["arn:aws:license-manager::111122223333:license:l-test"],
+    )
+
+    assert [item.seller["name"] for item in plan.items] == ["Right seller"]
 
 
 def test_backfill_uses_configured_grant_targets():
@@ -185,11 +228,10 @@ def test_apply_plan_records_pending_grant_when_not_immediately_active(
 
 @patch("backfill_grants.record_pending_grant")
 @patch("backfill_grants.create_and_activate_grants")
-def test_apply_plan_does_not_record_pending_grant_when_already_active(
+def test_apply_plan_records_workflow_completed_until_grant_is_active(
     mock_create, mock_record,
 ):
-    """A grant that activates immediately (ACTIVE or WORKFLOW_COMPLETED) needs
-    no retry tracking."""
+    """Workflow completion alone does not prove member-account activation."""
     mock_create.return_value = [{
         "grant_arn": "arn:aws:license-manager::111122223333:grant:g-test",
         "status": "WORKFLOW_COMPLETED",
@@ -201,7 +243,7 @@ def test_apply_plan_does_not_record_pending_grant_when_already_active(
     exit_code = apply_plan(plan, region="us-east-1", organization_id="o-exampleorg")
 
     assert exit_code == 0
-    mock_record.assert_not_called()
+    mock_record.assert_called_once()
 
 
 @patch("backfill_grants.record_pending_grant")
